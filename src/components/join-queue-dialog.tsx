@@ -1,0 +1,138 @@
+"use client"
+
+import { useState, useEffect } from "react"
+import { createClient } from "@/utils/supabase/client"
+import { Profile } from "@/types/database"
+import { Button } from "@/components/ui/button"
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+  DialogTrigger,
+} from "@/components/ui/dialog"
+import { Checkbox } from "@/components/ui/checkbox"
+import { ScrollArea } from "@/components/ui/scroll-area"
+import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar"
+import { Search } from "lucide-react"
+import { Input } from "@/components/ui/input"
+
+interface JoinQueueDialogProps {
+  sessionId: string
+  onJoined: () => void
+}
+
+export function JoinQueueDialog({ sessionId, onJoined }: JoinQueueDialogProps) {
+  const [profiles, setProfiles] = useState<Profile[]>([])
+  const [selectedIds, setSelectedIds] = useState<string[]>([])
+  const [search, setSearch] = useState("")
+  const [loading, setLoading] = useState(false)
+  const [open, setOpen] = useState(false)
+  const supabase = createClient()
+
+  useEffect(() => {
+    if (open) {
+      fetchProfiles()
+    }
+  }, [open])
+
+  async function fetchProfiles() {
+    const { data } = await supabase.from("profiles").select("*").order("display_name")
+    if (data) setProfiles(data as Profile[])
+  }
+
+  const filteredProfiles = profiles.filter(p => 
+    p.display_name?.toLowerCase().includes(search.toLowerCase())
+  )
+
+  async function handleJoin() {
+    if (selectedIds.length === 0) return
+    setLoading(true)
+
+    try {
+      const { error } = await supabase.from("queue_entries").insert({
+        session_id: sessionId,
+        player_ids: selectedIds,
+        status: "waiting",
+      })
+
+      if (error) throw error
+      
+      setSelectedIds([])
+      setOpen(false)
+      onJoined()
+    } catch (error) {
+      console.error("Error joining queue:", error)
+      alert("Failed to join queue")
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  function togglePlayer(id: string) {
+    setSelectedIds(prev => 
+      prev.includes(id) 
+        ? prev.filter(i => i !== id) 
+        : prev.length < 4 ? [...prev, id] : prev
+    )
+  }
+
+  return (
+    <Dialog open={open} onOpenChange={setOpen}>
+      <DialogTrigger asChild>
+        <Button size="lg" className="rounded-full px-8">Join Queue</Button>
+      </DialogTrigger>
+      <DialogContent className="sm:max-w-[425px]">
+        <DialogHeader>
+          <DialogTitle>Join the Paddle Rack</DialogTitle>
+          <DialogDescription>
+            Select yourself and up to 3 partners to join as a group.
+          </DialogDescription>
+        </DialogHeader>
+        
+        <div className="relative my-4">
+          <Search className="absolute left-2 top-2.5 h-4 w-4 text-muted-foreground" />
+          <Input 
+            placeholder="Search players..." 
+            className="pl-8" 
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+          />
+        </div>
+
+        <ScrollArea className="h-[300px] pr-4">
+          <div className="space-y-2">
+            {filteredProfiles.map((profile) => (
+              <div 
+                key={profile.id} 
+                className="flex items-center justify-between p-2 rounded-lg hover:bg-muted cursor-pointer"
+                onClick={() => togglePlayer(profile.id)}
+              >
+                <div className="flex items-center gap-3">
+                  <Avatar className="h-8 w-8">
+                    <AvatarImage src={profile.avatar_url || ""} />
+                    <AvatarFallback>{profile.display_name?.[0]}</AvatarFallback>
+                  </Avatar>
+                  <span className="font-medium">{profile.display_name}</span>
+                </div>
+                <Checkbox checked={selectedIds.includes(profile.id)} onCheckedChange={() => togglePlayer(profile.id)} />
+              </div>
+            ))}
+          </div>
+        </ScrollArea>
+
+        <div className="py-2 text-sm text-muted-foreground">
+          {selectedIds.length} players selected (Max 4)
+        </div>
+
+        <DialogFooter>
+          <Button onClick={handleJoin} disabled={loading || selectedIds.length === 0} className="w-full">
+            {loading ? "Joining..." : `Join with ${selectedIds.length} Player${selectedIds.length > 1 ? 's' : ''}`}
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  )
+}

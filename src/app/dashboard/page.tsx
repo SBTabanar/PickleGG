@@ -1,104 +1,89 @@
 import { createClient } from '@/utils/supabase/server'
-import { redirect } from 'next/navigation'
-import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import Link from 'next/link'
 import { ModeToggle } from '@/components/mode-toggle'
+import { CreateSessionDialog } from '@/components/create-session-dialog'
+import { Session } from '@/types/database'
+import { Button } from '@/components/ui/button'
+import { ChevronRight, Calendar } from 'lucide-react'
 
 export default async function DashboardPage() {
   const supabase = await createClient()
   const { data: { user } } = await supabase.auth.getUser()
 
+  const { data: sessions } = await supabase
+    .from("sessions")
+    .select("*")
+    .order("created_at", { ascending: false })
+
+  const typedSessions = sessions as Session[] | null
+
   return (
     <div className="flex min-h-screen w-full flex-col">
-      <header className="sticky top-0 flex h-16 items-center gap-4 border-b bg-background px-4 md:px-6">
+      <header className="sticky top-0 flex h-16 items-center gap-4 border-b bg-background px-4 md:px-6 z-10">
         <nav className="flex-col gap-6 text-lg font-medium md:flex md:flex-row md:items-center md:gap-5 md:text-sm lg:gap-6">
-          <Link href="#" className="flex items-center gap-2 text-lg font-semibold md:text-base">
+          <Link href="/dashboard" className="flex items-center gap-2 text-lg font-semibold md:text-base">
             <span className="text-primary font-bold text-xl">PickleGG</span>
           </Link>
-          <Link href="#" className="text-muted-foreground transition-colors hover:text-foreground">
+          <Link href="/dashboard" className="text-foreground transition-colors hover:text-foreground">
             Sessions
           </Link>
-          <Link href="#" className="text-muted-foreground transition-colors hover:text-foreground">
+          <Link href="/leaderboard" className="text-muted-foreground transition-colors hover:text-foreground">
             Leaderboard
           </Link>
         </nav>
         <div className="ml-auto flex items-center gap-4 text-sm">
-          <span>{user?.email || "Guest User"}</span>
+          <span className="hidden md:inline text-muted-foreground">{user?.email}</span>
           <ModeToggle />
         </div>
       </header>
 
-      <main className="flex flex-1 flex-col gap-4 p-4 md:gap-8 md:p-8">
+      <main className="flex flex-1 flex-col gap-8 p-4 md:p-8 max-w-5xl mx-auto w-full">
         <div className="flex items-center justify-between">
-          <h1 className="text-2xl font-bold tracking-tight">Active Session: Saturday Open Play</h1>
-          <Button>Join Queue</Button>
+          <div>
+            <h1 className="text-3xl font-bold tracking-tight">Play Sessions</h1>
+            <p className="text-muted-foreground">Manage your pickleball court rotations and stats.</p>
+          </div>
+          <CreateSessionDialog />
         </div>
 
-        <Tabs defaultValue="queue" className="w-full">
-          <TabsList>
-            <TabsTrigger value="queue">Paddle Queue</TabsTrigger>
-            <TabsTrigger value="courts">Courts (3)</TabsTrigger>
-          </TabsList>
-          <TabsContent value="queue" className="mt-4">
-            <Card>
-              <CardHeader>
-                <CardTitle>Next Up (The Bucket)</CardTitle>
-                <CardDescription>Players waiting for the next open court. 4 players per bucket.</CardDescription>
-              </CardHeader>
-              <CardContent className="flex flex-col gap-4">
-                <div className="flex items-center justify-between border p-4 rounded-lg bg-muted/50">
-                  <div className="flex gap-4">
-                    <div className="font-semibold w-24">Bucket 1</div>
-                    <div className="text-muted-foreground">Alex, Sarah, Mike, John</div>
-                  </div>
-                  <Button variant="secondary" size="sm">Ready</Button>
-                </div>
-                <div className="flex items-center justify-between border p-4 rounded-lg">
-                  <div className="flex gap-4">
-                    <div className="font-semibold w-24">Bucket 2</div>
-                    <div className="text-muted-foreground">Emma, David <span className="text-primary/70 text-xs uppercase ml-2 border px-1 rounded">2 spots open</span></div>
-                  </div>
-                  <Button variant="outline" size="sm">Join Bucket</Button>
-                </div>
-                <div className="flex items-center justify-between border p-4 rounded-lg opacity-60">
-                  <div className="flex gap-4">
-                    <div className="font-semibold w-24">Bucket 3</div>
-                    <div className="text-muted-foreground italic">Empty</div>
-                  </div>
-                  <Button variant="outline" size="sm">Start Bucket</Button>
-                </div>
+        <div className="grid gap-4">
+          {!typedSessions || typedSessions.length === 0 ? (
+            <Card className="border-dashed">
+              <CardContent className="flex flex-col items-center justify-center py-12 text-center">
+                <Calendar className="h-12 w-12 text-muted-foreground mb-4 opacity-20" />
+                <h3 className="text-lg font-semibold">No sessions found</h3>
+                <p className="text-muted-foreground mb-6">Create your first play session to get started.</p>
+                <CreateSessionDialog />
               </CardContent>
             </Card>
-          </TabsContent>
-          <TabsContent value="courts" className="mt-4">
-            <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
-              {[1, 2, 3].map((court) => (
-                <Card key={court}>
-                  <CardHeader className="pb-2">
-                    <CardTitle className="text-lg">Court {court}</CardTitle>
-                    <CardDescription className="text-green-500 font-medium">In Progress</CardDescription>
-                  </CardHeader>
-                  <CardContent>
-                    <div className="flex justify-between items-center text-sm py-2">
-                      <span>Team A:</span>
-                      <span className="font-medium">Tom & Jerry</span>
+          ) : (
+            typedSessions.map((session) => (
+              <Link key={session.id} href={`/dashboard/session/${session.id}`}>
+                <Card className="hover:bg-muted/50 transition-colors cursor-pointer group">
+                  <CardContent className="p-6 flex items-center justify-between">
+                    <div className="flex flex-col gap-1">
+                      <div className="flex items-center gap-2">
+                        <h3 className="text-xl font-bold">{session.name}</h3>
+                        <span className={`text-[10px] uppercase font-bold px-2 py-0.5 rounded-full ${
+                          session.status === 'active' ? 'bg-green-500/10 text-green-500' : 'bg-muted text-muted-foreground'
+                        }`}>
+                          {session.status}
+                        </span>
+                      </div>
+                      <p className="text-sm text-muted-foreground">
+                        Started {new Date(session.created_at).toLocaleDateString()}
+                      </p>
                     </div>
-                    <div className="flex justify-between items-center text-sm py-2 border-b mb-2">
-                      <span>Team B:</span>
-                      <span className="font-medium">Spike & Tyke</span>
-                    </div>
-                    <div className="mt-4 flex gap-2">
-                      <Button variant="default" className="w-full" size="sm">Enter Score</Button>
-                      <Button variant="destructive" className="w-full" size="sm">Clear Court</Button>
-                    </div>
+                    <Button variant="ghost" size="icon" className="group-hover:translate-x-1 transition-transform">
+                      <ChevronRight className="h-5 w-5" />
+                    </Button>
                   </CardContent>
                 </Card>
-              ))}
-            </div>
-          </TabsContent>
-        </Tabs>
+              </Link>
+            ))
+          )}
+        </div>
       </main>
     </div>
   )
