@@ -22,11 +22,32 @@ export function CreateSessionDialog() {
   const [numCourts, setNumCourts] = useState("3")
   const [loading, setLoading] = useState(false)
   const [open, setOpen] = useState(false)
+  const [error, setError] = useState<string | null>(null)
   const router = useRouter()
   const supabase = createClient()
 
   async function onSubmit(e: React.FormEvent) {
     e.preventDefault()
+    setError(null)
+
+    // Validate session name
+    const trimmedName = name.trim()
+    if (!trimmedName) {
+      setError("Session name is required.")
+      return
+    }
+    if (trimmedName.length > 100) {
+      setError("Session name must be 100 characters or fewer.")
+      return
+    }
+
+    // Validate court count
+    const parsedCourts = parseInt(numCourts, 10)
+    if (isNaN(parsedCourts) || parsedCourts < 1 || parsedCourts > 20) {
+      setError("Number of courts must be between 1 and 20.")
+      return
+    }
+
     setLoading(true)
 
     try {
@@ -37,7 +58,7 @@ export function CreateSessionDialog() {
       const { data: session, error: sessionError } = await supabase
         .from("sessions")
         .insert({
-          name,
+          name: trimmedName,
           creator_id: user.id,
           status: "active",
         })
@@ -47,7 +68,7 @@ export function CreateSessionDialog() {
       if (sessionError) throw sessionError
 
       // 2. Create the courts
-      const courts = Array.from({ length: parseInt(numCourts) }).map((_, i) => ({
+      const courts = Array.from({ length: parsedCourts }).map((_, i) => ({
         session_id: session.id,
         name: `Court ${i + 1}`,
         order_index: i,
@@ -59,9 +80,9 @@ export function CreateSessionDialog() {
 
       setOpen(false)
       router.push(`/dashboard/session/${session.id}`)
-    } catch (error) {
-      console.error("Error creating session:", error)
-      alert("Failed to create session")
+    } catch (err) {
+      console.error("Error creating session:", err instanceof Error ? err.message : "Unknown error")
+      setError("Failed to create session. Please try again.")
     } finally {
       setLoading(false)
     }
@@ -69,12 +90,14 @@ export function CreateSessionDialog() {
 
   return (
     <Dialog open={open} onOpenChange={setOpen}>
-      <DialogTrigger asChild>
-        <Button>
-          <PlusCircle className="mr-2 h-4 w-4" />
-          New Play Session
-        </Button>
-      </DialogTrigger>
+      <DialogTrigger
+        render={
+          <Button size="sm">
+            <PlusCircle className="mr-2 h-3.5 w-3.5" />
+            New Session
+          </Button>
+        }
+      />
       <DialogContent className="sm:max-w-[425px]">
         <form onSubmit={onSubmit}>
           <DialogHeader>
@@ -83,6 +106,11 @@ export function CreateSessionDialog() {
               Give your session a name and define how many courts are available.
             </DialogDescription>
           </DialogHeader>
+          {error && (
+            <div className="flex items-center gap-2 rounded-lg border border-destructive/20 bg-destructive/5 px-4 py-3">
+              <p className="text-sm text-destructive">{error}</p>
+            </div>
+          )}
           <div className="grid gap-4 py-4">
             <div className="grid gap-2">
               <Label htmlFor="name">Session Name</Label>
@@ -91,6 +119,7 @@ export function CreateSessionDialog() {
                 placeholder="Saturday Open Play"
                 value={name}
                 onChange={(e) => setName(e.target.value)}
+                maxLength={100}
                 required
               />
             </div>

@@ -34,6 +34,8 @@ export function JoinQueueDialog({ sessionId, onJoined }: JoinQueueDialogProps) {
 
   useEffect(() => {
     if (open) {
+      setSelectedIds([])
+      setSearch("")
       fetchProfiles()
     }
   }, [open])
@@ -56,6 +58,7 @@ export function JoinQueueDialog({ sessionId, onJoined }: JoinQueueDialogProps) {
         session_id: sessionId,
         player_ids: selectedIds,
         status: "waiting",
+        bucket_index: 0,
       })
 
       if (error) throw error
@@ -81,9 +84,7 @@ export function JoinQueueDialog({ sessionId, onJoined }: JoinQueueDialogProps) {
 
   return (
     <Dialog open={open} onOpenChange={setOpen}>
-      <DialogTrigger asChild>
-        <Button size="lg" className="rounded-full px-8">Join Queue</Button>
-      </DialogTrigger>
+      <DialogTrigger render={<Button size="sm">Join Queue</Button>} />
       <DialogContent className="sm:max-w-[425px]">
         <DialogHeader>
           <DialogTitle>Join the Paddle Rack</DialogTitle>

@@ -2,8 +2,16 @@ import { createClient } from '@/utils/supabase/server'
 import { notFound } from 'next/navigation'
 import { SessionDashboard } from './session-dashboard'
 
-export default async function SessionPage({ params }: { params: { id: string } }) {
+// UUID v4 format validation to reject malformed IDs before hitting the database
+const UUID_REGEX = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
+
+export default async function SessionPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params
+
+  if (!UUID_REGEX.test(id)) {
+    notFound()
+  }
+
   const supabase = await createClient()
 
   const { data: session } = await supabase

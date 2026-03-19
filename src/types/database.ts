@@ -14,6 +14,7 @@ export type Session = {
   name: string
   status: 'active' | 'completed'
   created_at: string
+  share_code: string | null
 }
 
 export type Court = {

@@ -16,6 +16,7 @@ import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 
 interface FinishMatchDialogProps {
+  sessionId: string
   gameId: string
   courtId: string
   team1Players: string[]
@@ -24,6 +25,7 @@ interface FinishMatchDialogProps {
 }
 
 export function FinishMatchDialog({ 
+  sessionId,
   gameId, 
   courtId, 
   team1Players, 
@@ -34,12 +36,36 @@ export function FinishMatchDialog({
   const [team2Score, setTeam2Score] = useState("0")
   const [loading, setLoading] = useState(false)
   const [open, setOpen] = useState(false)
+  const [error, setError] = useState<string | null>(null)
   const supabase = createClient()
 
+  function handleOpenChange(isOpen: boolean) {
+    setOpen(isOpen)
+    if (isOpen) {
+      setTeam1Score("0")
+      setTeam2Score("0")
+      setError(null)
+    }
+  }
+
+  function isValidScore(value: string): boolean {
+    const num = parseInt(value, 10)
+    return !isNaN(num) && num >= 0 && num <= 99 && String(num) === value.trim()
+  }
+
   async function handleFinish() {
+    if (!isValidScore(team1Score) || !isValidScore(team2Score)) {
+      setError("Scores must be whole numbers between 0 and 99.")
+      return
+    }
+    const t1Score = parseInt(team1Score, 10)
+    const t2Score = parseInt(team2Score, 10)
+    if (t1Score === t2Score) {
+      setError("Scores cannot be tied. One team must win.")
+      return
+    }
     setLoading(true)
-    const t1Score = parseInt(team1Score)
-    const t2Score = parseInt(team2Score)
+    setError(null)
     const winnerTeam = t1Score > t2Score ? 1 : 2
 
     try {
@@ -68,37 +94,67 @@ export function FinishMatchDialog({
 
       if (courtError) throw courtError
 
-      // 3. Update Player Stats (Simplified for prototype)
-      // Increment games_played, wins/losses for all 4 players
+      // 3. Update Player Stats
+      // TODO: PRODUCTION — Replace with a Supabase RPC (Postgres function) that performs
+      // atomic increments to eliminate the race condition in concurrent match finishes:
+      //   CREATE FUNCTION increment_player_stats(p_id UUID, p_is_win BOOLEAN)
+      //   RETURNS VOID AS $$
+      //     UPDATE profiles SET
+      //       games_played = games_played + 1,
+      //       wins = wins + CASE WHEN p_is_win THEN 1 ELSE 0 END,
+      //       losses = losses + CASE WHEN NOT p_is_win THEN 1 ELSE 0 END
+      //     WHERE id = p_id;
+      //   $$ LANGUAGE sql;
+      // Then call: supabase.rpc('increment_player_stats', { p_id: pid, p_is_win: isWin })
+      //
+      // The current read-then-write pattern is a race condition if two matches
+      // finish simultaneously for the same player. Running updates in parallel
+      // minimizes the window but does NOT eliminate it.
       const allPlayers = [...team1Players, ...team2Players]
-      for (const pid of allPlayers) {
-        const isWin = (team1Players.includes(pid) && winnerTeam === 1) || 
+      const updatePromises = allPlayers.map(async (pid) => {
+        const isWin = (team1Players.includes(pid) && winnerTeam === 1) ||
                       (team2Players.includes(pid) && winnerTeam === 2)
-        
-        // Using rpc or manual update
-        const { data: profile } = await supabase.from("profiles").select("games_played, wins, losses").eq("id", pid).single()
-        if (profile) {
-          await supabase.from("profiles").update({
-            games_played: (profile.games_played || 0) + 1,
-            wins: isWin ? (profile.wins || 0) + 1 : profile.wins,
-            losses: !isWin ? (profile.losses || 0) + 1 : profile.losses,
-          }).eq("id", pid)
+
+        const { data: profile, error: profileError } = await supabase
+          .from("profiles")
+          .select("games_played, wins, losses")
+          .eq("id", pid)
+          .single()
+
+        if (profileError) {
+          console.error(`Failed to fetch profile for player ${pid}:`, profileError.message)
+          return
         }
-      }
+
+        if (profile) {
+          const { error: updateError } = await supabase.from("profiles").update({
+            games_played: (profile.games_played || 0) + 1,
+            wins: isWin ? (profile.wins || 0) + 1 : (profile.wins || 0),
+            losses: !isWin ? (profile.losses || 0) + 1 : (profile.losses || 0),
+          }).eq("id", pid)
+
+          if (updateError) {
+            console.error(`Failed to update stats for player ${pid}:`, updateError.message)
+          }
+        }
+      })
+      await Promise.all(updatePromises)
 
       // 4. Return players to queue (4 off)
       // They join as a group of 4 at the back
       await supabase.from("queue_entries").insert({
-        session_id: (await supabase.from("games").select("session_id").eq("id", gameId).single()).data?.session_id,
+        session_id: sessionId,
         player_ids: allPlayers,
         status: "waiting",
+        bucket_index: 0,
       })
 
       setOpen(false)
       onFinished()
-    } catch (error) {
-      console.error("Error finishing match:", error)
-      alert("Failed to finish match")
+    } catch (err) {
+      // Log minimal info; do not expose database details to the user
+      console.error("Error finishing match:", err instanceof Error ? err.message : "Unknown error")
+      setError("Failed to finish match. Please try again.")
     } finally {
       setLoading(false)
     }
@@ -106,9 +162,7 @@ export function FinishMatchDialog({
 
   return (
     <Dialog open={open} onOpenChange={setOpen}>
-      <DialogTrigger asChild>
-        <Button variant="outline" className="w-full">Enter Score</Button>
-      </DialogTrigger>
+      <DialogTrigger render={<Button variant="outline" className="w-full">Enter Score</Button>} />
       <DialogContent className="sm:max-w-[425px]">
         <DialogHeader>
           <DialogTitle>Finish Match</DialogTitle>
@@ -116,12 +170,19 @@ export function FinishMatchDialog({
             Enter the final scores for both teams. Players will be returned to the back of the queue.
           </DialogDescription>
         </DialogHeader>
+        {error && (
+          <div className="flex items-center gap-2 rounded-lg border border-destructive/20 bg-destructive/5 px-4 py-3">
+            <p className="text-sm text-destructive">{error}</p>
+          </div>
+        )}
         <div className="grid grid-cols-2 gap-8 py-4">
           <div className="grid gap-2 text-center">
             <Label htmlFor="team1" className="text-lg font-bold">Team 1</Label>
             <Input
               id="team1"
               type="number"
+              min={0}
+              max={99}
               className="text-center text-3xl h-16"
               value={team1Score}
               onChange={(e) => setTeam1Score(e.target.value)}
@@ -132,6 +193,8 @@ export function FinishMatchDialog({
             <Input
               id="team2"
               type="number"
+              min={0}
+              max={99}
               className="text-center text-3xl h-16"
               value={team2Score}
               onChange={(e) => setTeam2Score(e.target.value)}

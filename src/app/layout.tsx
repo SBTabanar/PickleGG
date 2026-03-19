@@ -16,6 +16,10 @@ const geistMono = Geist_Mono({
 export const metadata: Metadata = {
   title: "PickleGG - Pickleball Stacking & Stats",
   description: "Smart pickleball queue rotation, court management, and leaderboards.",
+  referrer: "strict-origin-when-cross-origin",
+  other: {
+    "X-Content-Type-Options": "nosniff",
+  },
 };
 
 export default function RootLayout({
@@ -25,12 +29,16 @@ export default function RootLayout({
 }>) {
   return (
     <html lang="en" suppressHydrationWarning>
+      <head>
+        <meta name="viewport" content="width=device-width, initial-scale=1" />
+        <meta name="referrer" content="strict-origin-when-cross-origin" />
+      </head>
       <body
         className={`${geistSans.variable} ${geistMono.variable} antialiased`}
       >
         <ThemeProvider
           attribute="class"
-          defaultTheme="system"
+          defaultTheme="light"
           enableSystem
           disableTransitionOnChange
         >
