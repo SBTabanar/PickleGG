@@ -123,6 +123,48 @@ export async function removeFromQueueAction(sessionId: string, entryIds: string[
   return { success: true }
 }
 
+export async function updateQueueEntryAction(sessionId: string, entryId: string, playerIds: string[]) {
+  const { supabase } = await verifyManager(sessionId)
+
+  if (playerIds.length === 0) {
+    // If no players left, delete the entry
+    const { error } = await supabase
+      .from('queue_entries')
+      .delete()
+      .eq('id', entryId)
+    if (error) return { error: error.message }
+    return { success: true, deleted: true }
+  }
+
+  if (playerIds.length > 4) {
+    return { error: 'A group can have at most 4 players' }
+  }
+
+  // Check for duplicates — make sure none of the new players are already in another queue entry
+  const { data: allEntries } = await supabase
+    .from('queue_entries')
+    .select('id, player_ids')
+    .eq('session_id', sessionId)
+    .eq('status', 'waiting')
+
+  if (allEntries) {
+    for (const pid of playerIds) {
+      const existsInOther = allEntries.some(e => e.id !== entryId && e.player_ids.includes(pid))
+      if (existsInOther) {
+        return { error: 'One or more players are already in another group' }
+      }
+    }
+  }
+
+  const { error } = await supabase
+    .from('queue_entries')
+    .update({ player_ids: playerIds })
+    .eq('id', entryId)
+
+  if (error) return { error: error.message }
+  return { success: true }
+}
+
 export async function joinQueueAction(sessionId: string) {
   const supabase = await createClient()
   const { data: { user } } = await supabase.auth.getUser()

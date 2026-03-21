@@ -33,6 +33,8 @@ import { CourtVisual } from "@/components/court-visual"
 import { PlayerAvatar } from "@/components/player-avatar"
 import { Game, Profile } from "@/types/database"
 import { startMatchAction, endGameAction, removeFromQueueAction } from "./actions"
+import { EditGroupDialog } from "@/components/edit-group-dialog"
+import { Pencil, UserCheck } from "lucide-react"
 
 const supabase = createClient()
 
@@ -96,6 +98,7 @@ export function ManagerDashboard({
   const [playerNames, setPlayerNames] = useState<Record<string, string>>({})
   const [gameTimers, setGameTimers] = useState<Record<string, number>>({})
   const [showTimerPicker, setShowTimerPicker] = useState<string | null>(null)
+  const [editingEntry, setEditingEntry] = useState<{ id: string; playerIds: string[] } | null>(null)
 
   useEffect(() => {
     fetchActiveGames()
@@ -173,13 +176,13 @@ export function ManagerDashboard({
   }
 
   async function startMatch(courtId: string) {
-    if (buckets.length === 0 || buckets[0].players.length < 4) {
-      setActionError("Need at least 4 players in the first group to start a match.")
+    if (nextUpPlayers.length < 4) {
+      setActionError("Need at least 4 players in the queue to start a match.")
       return
     }
     setLoading(courtId)
     setActionError(null)
-    const result = await startMatchAction(session.id, courtId, buckets[0].players)
+    const result = await startMatchAction(session.id, courtId, nextUpPlayers.slice(0, 4))
     if (result.error) {
       setActionError(result.error)
     }
@@ -277,32 +280,38 @@ export function ManagerDashboard({
     }
   }, [session.id])
 
-  // Build buckets from queue
-  const buckets: { id: string; players: string[]; entryIds: string[] }[] = []
-  let currentBucket: string[] = []
-  let currentEntryIds: string[] = []
-
-  queue.forEach((entry) => {
-    if (!currentEntryIds.includes(entry.id)) {
-      currentEntryIds.push(entry.id)
+  // Collect the first 4 players from the queue for starting a match
+  const nextUpPlayers: string[] = []
+  for (const entry of queue) {
+    for (const pid of entry.player_ids) {
+      if (nextUpPlayers.length < 4) nextUpPlayers.push(pid)
     }
-    entry.player_ids.forEach(pid => {
-      if (currentBucket.length === 4) {
-        buckets.push({ id: `bucket-${buckets.length}`, players: currentBucket, entryIds: [...currentEntryIds] })
-        currentBucket = []
-        currentEntryIds = [entry.id]
-      }
-      currentBucket.push(pid)
-    })
-  })
-  if (currentBucket.length > 0) {
-    buckets.push({ id: `bucket-${buckets.length}`, players: currentBucket, entryIds: currentEntryIds })
+    if (nextUpPlayers.length >= 4) break
   }
 
+  // All player IDs currently in the queue
+  const allQueuePlayerIds = queue.flatMap(q => q.player_ids)
+
+  // All player IDs currently playing
+  const playingPlayerIds = games.flatMap(g => [...g.team1_player_ids, ...g.team2_player_ids])
+
+  // All active players (queue + playing, deduplicated)
+  const allActivePlayerIds = [...new Set([...allQueuePlayerIds, ...playingPlayerIds])]
+
   const activeCourts = courts.filter(c => c.status === 'in_use').length
-  const totalPlayers = queue.reduce((sum, q) => sum + q.player_ids.length, 0)
-  const playingPlayers = games.reduce((sum, g) => sum + g.team1_player_ids.length + g.team2_player_ids.length, 0)
+  const totalPlayers = allQueuePlayerIds.length
+  const playingPlayers = playingPlayerIds.length
   const totalGamesPlayed = completedGames.length
+
+  async function refetchQueue() {
+    const { data } = await supabase
+      .from("queue_entries")
+      .select("*")
+      .eq("session_id", session.id)
+      .eq("status", "waiting")
+      .order("joined_at", { ascending: true })
+    if (data) setQueue(data as QueueEntry[])
+  }
 
   return (
     <div className="flex min-h-screen w-full flex-col">
@@ -393,79 +402,134 @@ export function ManagerDashboard({
             </div>
           )}
 
-          {/* Rotation / Queue Section */}
-          {buckets.length > 0 && (
+          {/* Active Players */}
+          {allActivePlayerIds.length > 0 && (
+            <section>
+              <div className="flex items-center gap-2 mb-4">
+                <UserCheck className="h-4 w-4 text-muted-foreground" />
+                <h2 className="text-sm font-semibold uppercase tracking-wide text-muted-foreground">Active Players</h2>
+                <span className="text-xs text-muted-foreground ml-1">({allActivePlayerIds.length} total)</span>
+              </div>
+              <div className="flex flex-wrap gap-2">
+                {allActivePlayerIds.map((pid, i) => {
+                  const isPlaying = playingPlayerIds.includes(pid)
+                  return (
+                    <div
+                      key={pid}
+                      className={`inline-flex items-center gap-1.5 rounded-full border px-3 py-1.5 text-xs font-medium ${
+                        isPlaying
+                          ? 'border-primary/30 bg-primary/5 text-primary'
+                          : 'bg-card text-foreground'
+                      }`}
+                    >
+                      <PlayerAvatar name={playerNames[pid] || `P${i+1}`} size="sm" index={i} className="h-5 w-5 text-[8px]" />
+                      <span className="max-w-[80px] truncate">{playerNames[pid] || `P${i+1}`}</span>
+                      {isPlaying && <span className="text-[10px] text-primary/60">playing</span>}
+                    </div>
+                  )
+                })}
+              </div>
+            </section>
+          )}
+
+          {/* Queue / Rotation Section */}
+          {queue.length > 0 && (
             <section>
               <div className="flex items-center gap-2 mb-4">
                 <ListOrdered className="h-4 w-4 text-muted-foreground" />
-                <h2 className="text-sm font-semibold uppercase tracking-wide text-muted-foreground">Rotation</h2>
-                <span className="text-xs text-muted-foreground ml-1">({totalPlayers} in queue)</span>
+                <h2 className="text-sm font-semibold uppercase tracking-wide text-muted-foreground">Queue</h2>
+                <span className="text-xs text-muted-foreground ml-1">({totalPlayers} waiting)</span>
               </div>
 
               <div className="grid gap-2">
-                {buckets.map((bucket, index) => (
-                  <div
-                    key={bucket.id}
-                    className={`flex items-center justify-between px-4 py-3 rounded-xl border transition-all duration-200 animate-fade-in card-hover ${
-                      index === 0
-                        ? 'border-primary/30 bg-primary/5 dark:bg-primary/10'
-                        : 'bg-card hover:bg-muted/30'
-                    }`}
-                    style={{ animationDelay: `${index * 60}ms` }}
-                  >
-                    <div className="flex items-center gap-3">
-                      <div className={`h-8 w-8 rounded-lg flex items-center justify-center text-xs font-bold ${
-                        index === 0
-                          ? 'bg-primary text-primary-foreground'
-                          : 'bg-muted text-muted-foreground'
-                      }`}>
-                        {index + 1}
-                      </div>
-                      <div>
-                        <div className="flex items-center gap-2">
-                          <p className="text-sm font-medium">
-                            {index === 0 ? 'Next Up' : `Group ${index + 1}`}
-                          </p>
-                          {index === 0 && bucket.players.length === 4 && (
-                            <span role="status" className="inline-flex items-center gap-1 rounded-full bg-primary/15 px-2 py-0.5 text-[11px] font-semibold text-primary">
-                              <PlayCircle className="h-3 w-3" />
-                              Ready
-                            </span>
-                          )}
+                {queue.map((entry, index) => {
+                  const isFirst = index === 0
+                  return (
+                    <div
+                      key={entry.id}
+                      className={`flex items-center justify-between px-4 py-3 rounded-xl border transition-all duration-200 animate-fade-in card-hover ${
+                        isFirst
+                          ? 'border-primary/30 bg-primary/5 dark:bg-primary/10'
+                          : 'bg-card hover:bg-muted/30'
+                      }`}
+                      style={{ animationDelay: `${index * 60}ms` }}
+                    >
+                      <div className="flex items-center gap-3">
+                        <div className={`h-8 w-8 rounded-lg flex items-center justify-center text-xs font-bold ${
+                          isFirst
+                            ? 'bg-primary text-primary-foreground'
+                            : 'bg-muted text-muted-foreground'
+                        }`}>
+                          {index + 1}
                         </div>
-                        <p className="text-xs text-muted-foreground">{bucket.players.length} / 4 players</p>
-                      </div>
-                    </div>
-                    <div className="flex items-center gap-3">
-                      <div className="flex items-center gap-1.5 flex-wrap justify-end">
-                        {bucket.players.map((pid, i) => (
-                          <div key={pid} className="flex items-center gap-1">
-                            <PlayerAvatar
-                              name={playerNames[pid] || `P${i + 1}`}
-                              size="sm"
-                              index={i}
-                              className="border-2 border-background"
-                            />
-                            <span className="text-xs text-muted-foreground max-w-[70px] truncate hidden sm:inline">
-                              {playerNames[pid] || `P${i + 1}`}
-                            </span>
+                        <div>
+                          <div className="flex items-center gap-2">
+                            <p className="text-sm font-medium">
+                              {isFirst ? 'Next Up' : `Group ${index + 1}`}
+                            </p>
+                            {isFirst && nextUpPlayers.length >= 4 && (
+                              <span role="status" className="inline-flex items-center gap-1 rounded-full bg-primary/15 px-2 py-0.5 text-[11px] font-semibold text-primary">
+                                <PlayCircle className="h-3 w-3" />
+                                Ready
+                              </span>
+                            )}
                           </div>
-                        ))}
+                          <p className="text-xs text-muted-foreground">{entry.player_ids.length} player{entry.player_ids.length !== 1 ? "s" : ""}</p>
+                        </div>
                       </div>
-                      <Button
-                        variant="ghost"
-                        size="sm"
-                        className="h-8 w-8 p-0 text-muted-foreground hover:text-destructive"
-                        onClick={() => removeFromQueue(bucket.entryIds)}
-                        aria-label={`Remove group ${index + 1} from queue`}
-                      >
-                        <Trash2 className="h-3.5 w-3.5" />
-                      </Button>
+                      <div className="flex items-center gap-2">
+                        <div className="flex items-center gap-1.5 flex-wrap justify-end">
+                          {entry.player_ids.map((pid, i) => (
+                            <div key={pid} className="flex items-center gap-1">
+                              <PlayerAvatar
+                                name={playerNames[pid] || `P${i + 1}`}
+                                size="sm"
+                                index={i}
+                                className="border-2 border-background"
+                              />
+                              <span className="text-xs text-muted-foreground max-w-[70px] truncate hidden sm:inline">
+                                {playerNames[pid] || `P${i + 1}`}
+                              </span>
+                            </div>
+                          ))}
+                        </div>
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          className="h-8 w-8 p-0 text-muted-foreground hover:text-foreground"
+                          onClick={() => setEditingEntry({ id: entry.id, playerIds: entry.player_ids })}
+                          aria-label={`Edit group ${index + 1}`}
+                        >
+                          <Pencil className="h-3.5 w-3.5" />
+                        </Button>
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          className="h-8 w-8 p-0 text-muted-foreground hover:text-destructive"
+                          onClick={() => removeFromQueue([entry.id])}
+                          aria-label={`Remove group ${index + 1} from queue`}
+                        >
+                          <Trash2 className="h-3.5 w-3.5" />
+                        </Button>
+                      </div>
                     </div>
-                  </div>
-                ))}
+                  )
+                })}
               </div>
             </section>
+          )}
+
+          {/* Edit Group Dialog */}
+          {editingEntry && (
+            <EditGroupDialog
+              sessionId={session.id}
+              entryId={editingEntry.id}
+              currentPlayerIds={editingEntry.playerIds}
+              allQueuePlayerIds={allQueuePlayerIds}
+              open={!!editingEntry}
+              onOpenChange={(open) => { if (!open) setEditingEntry(null) }}
+              onUpdated={refetchQueue}
+            />
           )}
 
           {/* Courts Section */}
@@ -514,7 +578,7 @@ export function ManagerDashboard({
                           <div className="text-center">
                             <p className="text-sm font-medium">Ready for play</p>
                             <p className="text-xs text-muted-foreground mt-0.5">
-                              {buckets.length > 0 && buckets[0].players.length >= 4
+                              {nextUpPlayers.length >= 4
                                 ? 'Click "Start Match" to assign players'
                                 : 'Add more players to the queue first'
                               }
@@ -523,7 +587,7 @@ export function ManagerDashboard({
                           <Button
                             className="w-full mt-2"
                             onClick={() => startMatch(court.id)}
-                            disabled={loading === court.id || buckets.length === 0 || buckets[0].players.length < 4}
+                            disabled={loading === court.id || nextUpPlayers.length < 4}
                           >
                             <Swords className="mr-2 h-4 w-4" />
                             {loading === court.id ? "Starting..." : "Start Match"}
