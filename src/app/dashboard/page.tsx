@@ -3,6 +3,7 @@ import { redirect } from 'next/navigation'
 import Link from 'next/link'
 import { ModeToggle } from '@/components/mode-toggle'
 import { CreateSessionDialog } from '@/components/create-session-dialog'
+import { JoinSessionInput } from '@/components/join-session-input'
 import { Session } from '@/types/database'
 import { Button } from '@/components/ui/button'
 import { ChevronRight, Calendar, Trophy, Zap, LayoutGrid, LogOut, Users } from 'lucide-react'
@@ -82,6 +83,16 @@ export default async function DashboardPage() {
             <h1 className="text-2xl font-bold tracking-tight mb-1">{displayName}</h1>
             <p className="text-sm text-muted-foreground">Ready to play? Create or join a session below.</p>
           </div>
+        </div>
+
+        {/* Join a Session */}
+        <div className="rounded-2xl border bg-card p-5">
+          <div className="flex items-center gap-2 mb-3">
+            <Users className="h-4 w-4 text-primary" />
+            <h2 className="text-sm font-semibold">Join a Session</h2>
+          </div>
+          <p className="text-xs text-muted-foreground mb-3">Enter the code shared by your session manager</p>
+          <JoinSessionInput />
         </div>
 
         {/* Quick Stats */}
