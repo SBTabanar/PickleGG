@@ -29,8 +29,8 @@ function sanitizeError(raw: string | undefined): string | null {
   }
 }
 
-export default async function LoginPage({ searchParams }: { searchParams: Promise<{ error?: string }> }) {
-  const { error: rawError } = await searchParams
+export default async function LoginPage({ searchParams }: { searchParams: Promise<{ error?: string; redirect?: string }> }) {
+  const { error: rawError, redirect: redirectTo } = await searchParams
   const error = sanitizeError(rawError)
   return (
     <div className="flex min-h-screen w-full">
@@ -112,6 +112,7 @@ export default async function LoginPage({ searchParams }: { searchParams: Promis
           )}
 
           <form className="space-y-4">
+            {redirectTo && <input type="hidden" name="redirect" value={redirectTo} />}
             <div className="space-y-2">
               <Label htmlFor="email">Email</Label>
               <Input

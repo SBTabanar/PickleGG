@@ -35,7 +35,7 @@ export function PlayerAvatar({ name, size = "md", online, className, index = 0 }
   const colorClass = colorPalette[index % colorPalette.length]
 
   return (
-    <div className={cn("relative inline-flex items-center justify-center rounded-full font-semibold shrink-0", sizeMap[size], colorClass, className)}>
+    <div className={cn("relative inline-flex items-center justify-center rounded-full font-semibold shrink-0", sizeMap[size], colorClass, className)} aria-label={name || "Player"} role="img">
       {getInitials(name)}
       {online !== undefined && (
         <span

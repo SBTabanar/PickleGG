@@ -106,10 +106,9 @@ export function JoinQueueDialog({ sessionId, onJoined }: JoinQueueDialogProps) {
         <ScrollArea className="h-[300px] pr-4">
           <div className="space-y-2">
             {filteredProfiles.map((profile) => (
-              <div 
-                key={profile.id} 
+              <label
+                key={profile.id}
                 className="flex items-center justify-between p-2 rounded-lg hover:bg-muted cursor-pointer"
-                onClick={() => togglePlayer(profile.id)}
               >
                 <div className="flex items-center gap-3">
                   <Avatar className="h-8 w-8">
@@ -119,7 +118,7 @@ export function JoinQueueDialog({ sessionId, onJoined }: JoinQueueDialogProps) {
                   <span className="font-medium">{profile.display_name}</span>
                 </div>
                 <Checkbox checked={selectedIds.includes(profile.id)} onCheckedChange={() => togglePlayer(profile.id)} />
-              </div>
+              </label>
             ))}
           </div>
         </ScrollArea>

@@ -48,11 +48,23 @@ function validateAuthInput(formData: FormData): { email: string; password: strin
   return { email, password }
 }
 
+// Validate that a redirect URL is safe (internal paths only, no open redirect)
+function sanitizeRedirect(raw: string | null): string {
+  if (!raw) return '/dashboard'
+  // Only allow relative paths starting with /
+  if (!raw.startsWith('/') || raw.startsWith('//')) return '/dashboard'
+  // Block protocol-relative URLs and javascript: URIs
+  if (/^\/[\\\/]|javascript:/i.test(raw)) return '/dashboard'
+  return raw
+}
+
 export async function login(formData: FormData) {
   const validated = validateAuthInput(formData)
+  const redirectTo = sanitizeRedirect(formData.get('redirect') as string | null)
 
   if ('error' in validated) {
-    redirect(`/login?error=${encodeURIComponent(validated.error)}`)
+    const redirectParam = redirectTo !== '/dashboard' ? `&redirect=${encodeURIComponent(redirectTo)}` : ''
+    redirect(`/login?error=${encodeURIComponent(validated.error)}${redirectParam}`)
   }
 
   const supabase = await createClient()
@@ -65,18 +77,21 @@ export async function login(formData: FormData) {
   if (error) {
     // Log full error server-side only; show generic message to user
     console.error('Login error:', error.message)
-    redirect(`/login?error=${encodeURIComponent('Invalid email or password.')}`)
+    const redirectParam = redirectTo !== '/dashboard' ? `&redirect=${encodeURIComponent(redirectTo)}` : ''
+    redirect(`/login?error=${encodeURIComponent('Invalid email or password.')}${redirectParam}`)
   }
 
   revalidatePath('/', 'layout')
-  redirect('/dashboard')
+  redirect(redirectTo)
 }
 
 export async function signup(formData: FormData) {
   const validated = validateAuthInput(formData)
+  const redirectTo = sanitizeRedirect(formData.get('redirect') as string | null)
 
   if ('error' in validated) {
-    redirect(`/login?error=${encodeURIComponent(validated.error)}`)
+    const redirectParam = redirectTo !== '/dashboard' ? `&redirect=${encodeURIComponent(redirectTo)}` : ''
+    redirect(`/login?error=${encodeURIComponent(validated.error)}${redirectParam}`)
   }
 
   const supabase = await createClient()
@@ -89,11 +104,12 @@ export async function signup(formData: FormData) {
   if (error) {
     // Log full error server-side only; show generic message to user
     console.error('Signup error:', error.message)
-    redirect(`/login?error=${encodeURIComponent('Could not create account. Please try again.')}`)
+    const redirectParam = redirectTo !== '/dashboard' ? `&redirect=${encodeURIComponent(redirectTo)}` : ''
+    redirect(`/login?error=${encodeURIComponent('Could not create account. Please try again.')}${redirectParam}`)
   }
 
   revalidatePath('/', 'layout')
-  redirect('/dashboard')
+  redirect(redirectTo)
 }
 
 export async function logout() {

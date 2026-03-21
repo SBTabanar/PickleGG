@@ -89,7 +89,10 @@ export function CreateSessionDialog() {
   }
 
   return (
-    <Dialog open={open} onOpenChange={setOpen}>
+    <Dialog open={open} onOpenChange={(isOpen) => {
+      setOpen(isOpen)
+      if (isOpen) { setName(""); setNumCourts("3"); setError(null) }
+    }}>
       <DialogTrigger
         render={
           <Button size="sm">

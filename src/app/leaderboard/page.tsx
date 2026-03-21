@@ -76,7 +76,7 @@ export default async function LeaderboardPage() {
             <p className="text-sm text-muted-foreground">Top players ranked by wins across all sessions.</p>
           </div>
 
-          {/* Podium for Top 3 */}
+          {/* Podium for Top 3 (only renders when all 3 spots are filled) */}
           {top3.length >= 3 && (
             <div className="grid grid-cols-3 gap-3 md:gap-4 items-end max-w-lg mx-auto w-full">
               {/* 2nd place */}

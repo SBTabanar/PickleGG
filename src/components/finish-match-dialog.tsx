@@ -161,7 +161,7 @@ export function FinishMatchDialog({
   }
 
   return (
-    <Dialog open={open} onOpenChange={setOpen}>
+    <Dialog open={open} onOpenChange={handleOpenChange}>
       <DialogTrigger render={<Button variant="outline" className="w-full">Enter Score</Button>} />
       <DialogContent className="sm:max-w-[425px]">
         <DialogHeader>

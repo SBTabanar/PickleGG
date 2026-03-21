@@ -29,8 +29,8 @@ export default function SessionError({
           <Button onClick={reset} variant="outline">
             Try again
           </Button>
-          <Button asChild variant="ghost">
-            <Link href="/dashboard">Back to Dashboard</Link>
+          <Button render={<Link href="/dashboard" />} variant="ghost">
+            Back to Dashboard
           </Button>
         </div>
       </div>

@@ -144,6 +144,21 @@
   html {
     @apply font-sans scroll-smooth;
   }
+  button,
+  [role="button"],
+  a[href],
+  summary {
+    cursor: pointer;
+  }
+  a {
+    transition: color 0.15s ease-out;
+  }
+  .card-hover {
+    transition: box-shadow 0.2s ease-out, transform 0.15s ease-out;
+  }
+  .card-hover:hover {
+    box-shadow: 0 4px 12px oklch(0 0 0 / 8%);
+  }
 }
 
 @layer utilities {
@@ -164,6 +179,21 @@
   }
   .animate-pulse-soft {
     animation: pulseSoft 2s ease-in-out infinite;
+  }
+  .animate-pulse-next {
+    animation: pulseNext 2s ease-in-out infinite;
+  }
+  .animate-count-up {
+    animation: countUp 0.6s ease-out forwards;
+  }
+  .animate-glow {
+    animation: courtGlow 3s ease-in-out infinite;
+  }
+  .hover-scale {
+    transition: transform 0.15s ease-out;
+  }
+  .hover-scale:hover {
+    transform: scale(1.02);
   }
   .stagger-1 { animation-delay: 0.1s; }
   .stagger-2 { animation-delay: 0.2s; }
@@ -218,6 +248,37 @@
 @keyframes pulseSoft {
   0%, 100% { opacity: 1; }
   50% { opacity: 0.7; }
+}
+
+@keyframes pulseNext {
+  0%, 100% {
+    box-shadow: 0 0 0 0 oklch(0.65 0.2 145 / 40%);
+    transform: scale(1);
+  }
+  50% {
+    box-shadow: 0 0 20px 4px oklch(0.65 0.2 145 / 20%);
+    transform: scale(1.01);
+  }
+}
+
+@keyframes countUp {
+  from {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes courtGlow {
+  0%, 100% {
+    box-shadow: 0 0 0 0 oklch(0.65 0.2 145 / 0%);
+  }
+  50% {
+    box-shadow: 0 0 16px 2px oklch(0.65 0.2 145 / 15%);
+  }
 }
 
 @media (prefers-reduced-motion: reduce) {

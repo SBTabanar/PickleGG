@@ -1,6 +1,7 @@
 import { createClient } from '@/utils/supabase/server'
-import { notFound } from 'next/navigation'
-import { SessionDashboard } from './session-dashboard'
+import { notFound, redirect } from 'next/navigation'
+import { ManagerDashboard } from './manager-dashboard'
+import { PlayerDashboard } from './player-dashboard'
 
 // UUID v4 format validation to reject malformed IDs before hitting the database
 const UUID_REGEX = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
@@ -13,6 +14,13 @@ export default async function SessionPage({ params }: { params: Promise<{ id: st
   }
 
   const supabase = await createClient()
+
+  // Get the current user
+  const { data: { user } } = await supabase.auth.getUser()
+
+  if (!user) {
+    redirect('/login')
+  }
 
   const { data: session } = await supabase
     .from("sessions")
@@ -37,11 +45,25 @@ export default async function SessionPage({ params }: { params: Promise<{ id: st
     .eq("status", "waiting")
     .order("joined_at", { ascending: true })
 
+  const isManager = user.id === session.creator_id
+
+  if (isManager) {
+    return (
+      <ManagerDashboard
+        initialSession={session}
+        initialCourts={courts || []}
+        initialQueue={queueEntries || []}
+        userId={user.id}
+      />
+    )
+  }
+
   return (
-    <SessionDashboard 
-      initialSession={session} 
-      initialCourts={courts || []} 
-      initialQueue={queueEntries || []} 
+    <PlayerDashboard
+      initialSession={session}
+      initialCourts={courts || []}
+      initialQueue={queueEntries || []}
+      userId={user.id}
     />
   )
 }
