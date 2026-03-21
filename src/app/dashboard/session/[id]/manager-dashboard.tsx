@@ -188,9 +188,19 @@ export function ManagerDashboard({
 
   async function removeFromQueue(entryIds: string[]) {
     setActionError(null)
+    // Optimistically remove from local state
+    setQueue(prev => prev.filter(q => !entryIds.includes(q.id)))
     const result = await removeFromQueueAction(session.id, entryIds)
     if (result.error) {
       setActionError(result.error)
+      // Re-fetch on error to restore state
+      const { data } = await supabase
+        .from("queue_entries")
+        .select("*")
+        .eq("session_id", session.id)
+        .eq("status", "waiting")
+        .order("joined_at", { ascending: true })
+      if (data) setQueue(data as QueueEntry[])
     }
   }
 

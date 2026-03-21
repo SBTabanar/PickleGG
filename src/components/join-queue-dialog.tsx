@@ -30,6 +30,7 @@ export function JoinQueueDialog({ sessionId, onJoined }: JoinQueueDialogProps) {
   const [search, setSearch] = useState("")
   const [loading, setLoading] = useState(false)
   const [open, setOpen] = useState(false)
+  const [alreadyInQueue, setAlreadyInQueue] = useState<string[]>([])
   const supabase = createClient()
 
   useEffect(() => {
@@ -37,6 +38,7 @@ export function JoinQueueDialog({ sessionId, onJoined }: JoinQueueDialogProps) {
       setSelectedIds([])
       setSearch("")
       fetchProfiles()
+      fetchQueuePlayerIds()
     }
   }, [open])
 
@@ -45,8 +47,30 @@ export function JoinQueueDialog({ sessionId, onJoined }: JoinQueueDialogProps) {
     if (data) setProfiles(data as Profile[])
   }
 
-  const filteredProfiles = profiles.filter(p => 
-    p.display_name?.toLowerCase().includes(search.toLowerCase())
+  async function fetchQueuePlayerIds() {
+    const { data: entries } = await supabase
+      .from("queue_entries")
+      .select("player_ids")
+      .eq("session_id", sessionId)
+      .in("status", ["waiting", "playing"])
+    const { data: games } = await supabase
+      .from("games")
+      .select("team1_player_ids, team2_player_ids")
+      .eq("session_id", sessionId)
+      .eq("status", "in_progress")
+
+    const ids = new Set<string>()
+    entries?.forEach(e => e.player_ids.forEach((id: string) => ids.add(id)))
+    games?.forEach(g => {
+      g.team1_player_ids.forEach((id: string) => ids.add(id))
+      g.team2_player_ids.forEach((id: string) => ids.add(id))
+    })
+    setAlreadyInQueue(Array.from(ids))
+  }
+
+  const filteredProfiles = profiles.filter(p =>
+    p.display_name?.toLowerCase().includes(search.toLowerCase()) &&
+    !alreadyInQueue.includes(p.id)
   )
 
   async function handleJoin() {

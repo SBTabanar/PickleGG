@@ -20,7 +20,7 @@ import {
   LogIn,
   LogOut,
 } from "lucide-react"
-import { leaveQueueAction } from "./actions"
+import { joinQueueAction, leaveQueueAction } from "./actions"
 
 const supabase = createClient()
 
@@ -126,20 +126,11 @@ export function PlayerDashboard({
   async function joinQueue() {
     setJoining(true)
     setActionError(null)
-    try {
-      const { error } = await supabase.from("queue_entries").insert({
-        session_id: session.id,
-        player_ids: [userId],
-        status: "waiting",
-        bucket_index: 0,
-      })
-      if (error) throw error
-    } catch (err) {
-      console.error("Error joining queue:", err instanceof Error ? err.message : "Unknown error")
-      setActionError("Failed to join queue. Please try again.")
-    } finally {
-      setJoining(false)
+    const result = await joinQueueAction(session.id)
+    if (result.error) {
+      setActionError(result.error)
     }
+    setJoining(false)
   }
 
   async function leaveQueue() {

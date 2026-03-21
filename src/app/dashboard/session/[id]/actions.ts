@@ -123,6 +123,44 @@ export async function removeFromQueueAction(sessionId: string, entryIds: string[
   return { success: true }
 }
 
+export async function joinQueueAction(sessionId: string) {
+  const supabase = await createClient()
+  const { data: { user } } = await supabase.auth.getUser()
+  if (!user) return { error: 'Not authenticated' }
+
+  // Check if player is already in the queue (waiting or playing)
+  const { data: existing } = await supabase
+    .from('queue_entries')
+    .select('id, player_ids')
+    .eq('session_id', sessionId)
+    .in('status', ['waiting', 'playing'])
+
+  if (existing?.some(e => e.player_ids.includes(user.id))) {
+    return { error: 'You are already in the queue' }
+  }
+
+  // Also check if currently in an active game
+  const { data: activeGames } = await supabase
+    .from('games')
+    .select('id, team1_player_ids, team2_player_ids')
+    .eq('session_id', sessionId)
+    .eq('status', 'in_progress')
+
+  if (activeGames?.some(g => g.team1_player_ids.includes(user.id) || g.team2_player_ids.includes(user.id))) {
+    return { error: 'You are currently in a game' }
+  }
+
+  const { error } = await supabase.from('queue_entries').insert({
+    session_id: sessionId,
+    player_ids: [user.id],
+    status: 'waiting',
+    bucket_index: 0,
+  })
+
+  if (error) return { error: error.message }
+  return { success: true }
+}
+
 export async function leaveQueueAction(sessionId: string) {
   const supabase = await createClient()
   const { data: { user } } = await supabase.auth.getUser()
