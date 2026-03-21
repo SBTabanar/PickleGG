@@ -56,8 +56,8 @@ function MatchTimer({ startedAt }: { startedAt: string }) {
 }
 
 type PlayerStatus =
-  | { type: "in_queue"; position: number; totalGroups: number; queueEntryId: string }
-  | { type: "next_up"; queueEntryId: string }
+  | { type: "in_queue"; position: number; totalGroups: number }
+  | { type: "next_up" }
   | { type: "playing"; court: Court; game: Game }
   | { type: "not_in_session" }
 
@@ -141,14 +141,20 @@ export function PlayerDashboard({
     }
   }
 
-  async function leaveQueue(entryId: string) {
+  async function leaveQueue() {
+    // Find the queue entry containing this player directly at call time
+    const entry = queue.find(q => q.player_ids.includes(userId))
+    if (!entry) {
+      setActionError("Could not find your queue entry. Try refreshing.")
+      return
+    }
     setLeaving(true)
     setActionError(null)
     try {
       const { error } = await supabase
         .from("queue_entries")
         .delete()
-        .eq("id", entryId)
+        .eq("id", entry.id)
       if (error) throw error
     } catch (err) {
       console.error("Error leaving queue:", err instanceof Error ? err.message : "Unknown error")
@@ -257,12 +263,6 @@ export function PlayerDashboard({
     return result
   }, [queue])
 
-  // Find the queue entry that contains this player
-  const myQueueEntryId = useMemo(() => {
-    const entry = queue.find(q => q.player_ids.includes(userId))
-    return entry?.id ?? null
-  }, [queue, userId])
-
   // Determine player status
   const playerStatus: PlayerStatus = useMemo(() => {
     // Check if currently playing
@@ -278,13 +278,13 @@ export function PlayerDashboard({
     for (let i = 0; i < buckets.length; i++) {
       if (buckets[i].players.includes(userId)) {
         if (i === 0 && buckets[i].players.length === 4) {
-          return { type: "next_up", queueEntryId: myQueueEntryId! }
+          return { type: "next_up" }
         }
-        return { type: "in_queue", position: i + 1, totalGroups: buckets.length, queueEntryId: myQueueEntryId! }
+        return { type: "in_queue", position: i + 1, totalGroups: buckets.length }
       }
     }
     return { type: "not_in_session" }
-  }, [games, buckets, courts, userId, myQueueEntryId])
+  }, [games, buckets, courts, userId])
 
   const estimatedWaitMinutes = playerStatus.type === "in_queue"
     ? playerStatus.position * 10
@@ -362,12 +362,11 @@ export function PlayerDashboard({
               </div>
               <Button
                 variant="outline"
-                size="sm"
-                className="mt-4 text-muted-foreground"
-                onClick={() => leaveQueue(playerStatus.queueEntryId)}
+                className="mt-4 h-11 px-6 text-muted-foreground"
+                onClick={leaveQueue}
                 disabled={leaving}
               >
-                <LogOut className="mr-1.5 h-3.5 w-3.5" />
+                <LogOut className="mr-1.5 h-4 w-4" />
                 {leaving ? "Leaving..." : "Leave Queue"}
               </Button>
             </div>
@@ -383,12 +382,11 @@ export function PlayerDashboard({
               <p className="text-sm text-muted-foreground mt-2">Get ready — you&apos;ll be called to a court soon</p>
               <Button
                 variant="ghost"
-                size="sm"
-                className="mt-4 text-muted-foreground"
-                onClick={() => leaveQueue(playerStatus.queueEntryId)}
+                className="mt-4 h-11 px-6 text-muted-foreground"
+                onClick={leaveQueue}
                 disabled={leaving}
               >
-                <LogOut className="mr-1.5 h-3.5 w-3.5" />
+                <LogOut className="mr-1.5 h-4 w-4" />
                 {leaving ? "Leaving..." : "Leave Queue"}
               </Button>
             </div>
