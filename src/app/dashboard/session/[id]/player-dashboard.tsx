@@ -148,6 +148,9 @@ export function PlayerDashboard({
     const result = await leaveQueueAction(session.id)
     if (result.error) {
       setActionError(result.error)
+    } else {
+      // Optimistically remove from local state immediately
+      setQueue(prev => prev.filter(q => !q.player_ids.includes(userId)))
     }
     setLeaving(false)
   }
