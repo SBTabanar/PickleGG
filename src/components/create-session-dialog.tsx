@@ -54,13 +54,15 @@ export function CreateSessionDialog() {
       const { data: { user } } = await supabase.auth.getUser()
       if (!user) throw new Error("Not authenticated")
 
-      // 1. Create the session
+      // 1. Create the session with a share code
+      const shareCode = Math.random().toString(36).substring(2, 8).toUpperCase()
       const { data: session, error: sessionError } = await supabase
         .from("sessions")
         .insert({
           name: trimmedName,
           creator_id: user.id,
           status: "active",
+          share_code: shareCode,
         })
         .select()
         .single()
