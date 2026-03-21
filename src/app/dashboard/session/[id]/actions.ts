@@ -122,3 +122,27 @@ export async function removeFromQueueAction(sessionId: string, entryIds: string[
   if (error) return { error: error.message }
   return { success: true }
 }
+
+export async function leaveQueueAction(sessionId: string) {
+  const supabase = await createClient()
+  const { data: { user } } = await supabase.auth.getUser()
+  if (!user) return { error: 'Not authenticated' }
+
+  // Find the queue entry containing this player
+  const { data: entries } = await supabase
+    .from('queue_entries')
+    .select('id, player_ids')
+    .eq('session_id', sessionId)
+    .eq('status', 'waiting')
+
+  const entry = entries?.find(e => e.player_ids.includes(user.id))
+  if (!entry) return { error: 'Could not find your queue entry' }
+
+  const { error } = await supabase
+    .from('queue_entries')
+    .delete()
+    .eq('id', entry.id)
+
+  if (error) return { error: error.message }
+  return { success: true }
+}

@@ -20,6 +20,7 @@ import {
   LogIn,
   LogOut,
 } from "lucide-react"
+import { leaveQueueAction } from "./actions"
 
 const supabase = createClient()
 
@@ -142,26 +143,13 @@ export function PlayerDashboard({
   }
 
   async function leaveQueue() {
-    // Find the queue entry containing this player directly at call time
-    const entry = queue.find(q => q.player_ids.includes(userId))
-    if (!entry) {
-      setActionError("Could not find your queue entry. Try refreshing.")
-      return
-    }
     setLeaving(true)
     setActionError(null)
-    try {
-      const { error } = await supabase
-        .from("queue_entries")
-        .delete()
-        .eq("id", entry.id)
-      if (error) throw error
-    } catch (err) {
-      console.error("Error leaving queue:", err instanceof Error ? err.message : "Unknown error")
-      setActionError("Failed to leave queue. Please try again.")
-    } finally {
-      setLeaving(false)
+    const result = await leaveQueueAction(session.id)
+    if (result.error) {
+      setActionError(result.error)
     }
+    setLeaving(false)
   }
 
   // Realtime subscriptions
