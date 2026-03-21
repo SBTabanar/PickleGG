@@ -51,7 +51,7 @@ export async function startMatchAction(sessionId: string, courtId: string, playe
 
   if (courtError) return { error: courtError.message }
 
-  // Mark relevant queue entries as playing
+  // Handle queue entries for the players going into the match
   const { data: entries } = await supabase
     .from('queue_entries')
     .select('id, player_ids')
@@ -59,15 +59,18 @@ export async function startMatchAction(sessionId: string, courtId: string, playe
     .eq('status', 'waiting')
 
   if (entries) {
-    const entryIdsToUpdate = entries
-      .filter(e => e.player_ids.some((pid: string) => playerIds.includes(pid)))
-      .map(e => e.id)
+    for (const entry of entries) {
+      const matchedPlayers = entry.player_ids.filter((pid: string) => playerIds.includes(pid))
+      if (matchedPlayers.length === 0) continue
 
-    if (entryIdsToUpdate.length > 0) {
-      await supabase
-        .from('queue_entries')
-        .update({ status: 'playing' })
-        .in('id', entryIdsToUpdate)
+      if (matchedPlayers.length === entry.player_ids.length) {
+        // All players in this entry are in the match — delete the entry
+        await supabase.from('queue_entries').delete().eq('id', entry.id)
+      } else {
+        // Only some players taken — remove them from the entry
+        const remaining = entry.player_ids.filter((pid: string) => !playerIds.includes(pid))
+        await supabase.from('queue_entries').update({ player_ids: remaining }).eq('id', entry.id)
+      }
     }
   }
 
@@ -99,8 +102,24 @@ export async function endGameAction(sessionId: string, gameId: string, courtId: 
 
   if (courtError) return { error: courtError.message }
 
-  // Return players to queue
+  // Clean up old 'playing' queue entries for these players
   const allPlayers = [...game.team1_player_ids, ...game.team2_player_ids]
+  const { data: playingEntries } = await supabase
+    .from('queue_entries')
+    .select('id, player_ids')
+    .eq('session_id', sessionId)
+    .eq('status', 'playing')
+
+  if (playingEntries) {
+    const entriesToDelete = playingEntries
+      .filter(e => e.player_ids.some((pid: string) => allPlayers.includes(pid)))
+      .map(e => e.id)
+    if (entriesToDelete.length > 0) {
+      await supabase.from('queue_entries').delete().in('id', entriesToDelete)
+    }
+  }
+
+  // Return players to queue
   await supabase.from('queue_entries').insert({
     session_id: sessionId,
     player_ids: allPlayers,

@@ -221,30 +221,14 @@ export function PlayerDashboard({
     }
   }, [session.id])
 
-  // Build buckets from queue (track which queue entry each player came from)
-  const buckets = useMemo(() => {
-    const result: { id: string; players: string[]; entryIds: string[] }[] = []
-    let currentBucket: string[] = []
-    let currentEntryIds: string[] = []
-
-    queue.forEach((entry) => {
-      entry.player_ids.forEach(pid => {
-        if (currentBucket.length === 4) {
-          result.push({ id: `bucket-${result.length}`, players: currentBucket, entryIds: [...currentEntryIds] })
-          currentBucket = []
-          currentEntryIds = []
-        }
-        currentBucket.push(pid)
-        if (!currentEntryIds.includes(entry.id)) {
-          currentEntryIds.push(entry.id)
-        }
-      })
-    })
-    if (currentBucket.length > 0) {
-      result.push({ id: `bucket-${result.length}`, players: currentBucket, entryIds: currentEntryIds })
+  // Collect the first 4 players from queue for "next up" detection
+  const nextUpPlayers: string[] = []
+  for (const entry of queue) {
+    for (const pid of entry.player_ids) {
+      if (nextUpPlayers.length < 4) nextUpPlayers.push(pid)
     }
-    return result
-  }, [queue])
+    if (nextUpPlayers.length >= 4) break
+  }
 
   // Determine player status
   const playerStatus: PlayerStatus = useMemo(() => {
@@ -258,16 +242,16 @@ export function PlayerDashboard({
       }
     }
     // Check queue position
-    for (let i = 0; i < buckets.length; i++) {
-      if (buckets[i].players.includes(userId)) {
-        if (i === 0 && buckets[i].players.length === 4) {
+    for (let i = 0; i < queue.length; i++) {
+      if (queue[i].player_ids.includes(userId)) {
+        if (nextUpPlayers.length >= 4 && nextUpPlayers.includes(userId)) {
           return { type: "next_up" }
         }
-        return { type: "in_queue", position: i + 1, totalGroups: buckets.length }
+        return { type: "in_queue", position: i + 1, totalGroups: queue.length }
       }
     }
     return { type: "not_in_session" }
-  }, [games, buckets, courts, userId])
+  }, [games, queue, courts, userId, nextUpPlayers])
 
   const estimatedWaitMinutes = playerStatus.type === "in_queue"
     ? playerStatus.position * 10
@@ -461,7 +445,7 @@ export function PlayerDashboard({
         </section>
 
         {/* Queue Positions */}
-        {buckets.length > 0 && (
+        {queue.length > 0 && (
           <section>
             <div className="flex items-center gap-2 mb-3">
               <ListOrdered className="h-4 w-4 text-muted-foreground" />
@@ -469,11 +453,11 @@ export function PlayerDashboard({
             </div>
 
             <div className="space-y-2">
-              {buckets.map((bucket, index) => {
-                const isMyGroup = bucket.players.includes(userId)
+              {queue.map((entry, index) => {
+                const isMyGroup = entry.player_ids.includes(userId)
                 return (
                   <div
-                    key={bucket.id}
+                    key={entry.id}
                     className={`flex items-center justify-between px-4 py-3 rounded-xl border transition-colors ${
                       isMyGroup
                         ? 'border-primary/40 bg-primary/5 dark:bg-primary/10 ring-1 ring-primary/20'
@@ -494,11 +478,11 @@ export function PlayerDashboard({
                         <p className="text-sm font-medium">
                           {isMyGroup ? 'Your Group' : index === 0 ? 'Next Up' : `Group ${index + 1}`}
                         </p>
-                        <p className="text-xs text-muted-foreground">{bucket.players.length} player{bucket.players.length !== 1 ? "s" : ""}</p>
+                        <p className="text-xs text-muted-foreground">{entry.player_ids.length} player{entry.player_ids.length !== 1 ? "s" : ""}</p>
                       </div>
                     </div>
                     <div className="flex items-center gap-1 flex-wrap justify-end">
-                      {bucket.players.map((pid, i) => {
+                      {entry.player_ids.map((pid, i) => {
                         const name = pid === userId ? "You" : (playerNames[pid] || `P${i + 1}`)
                         return (
                           <div key={pid} className="flex items-center gap-0.5">
