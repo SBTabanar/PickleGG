@@ -4,6 +4,7 @@ import Link from 'next/link'
 import { ModeToggle } from '@/components/mode-toggle'
 import { CreateSessionDialog } from '@/components/create-session-dialog'
 import { JoinSessionInput } from '@/components/join-session-input'
+import { EditProfileDialog } from '@/components/edit-profile-dialog'
 import { Session } from '@/types/database'
 import { Button } from '@/components/ui/button'
 import { ChevronRight, Calendar, Trophy, Zap, LayoutGrid, LogOut, Users } from 'lucide-react'
@@ -64,6 +65,7 @@ export default async function DashboardPage() {
         </nav>
         <div className="ml-auto flex items-center gap-3">
           <span className="hidden md:inline text-xs text-muted-foreground">{user?.email}</span>
+          <EditProfileDialog />
           <ModeToggle />
           <form action={logout}>
             <Button variant="ghost" size="icon-sm" type="submit">

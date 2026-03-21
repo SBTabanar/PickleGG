@@ -21,6 +21,7 @@ import {
   LogOut,
 } from "lucide-react"
 import { joinQueueAction, leaveQueueAction } from "./actions"
+import { EditProfileDialog } from "@/components/edit-profile-dialog"
 
 const supabase = createClient()
 
@@ -290,6 +291,7 @@ export function PlayerDashboard({
         </div>
         <div className="flex items-center gap-1">
           <ShareSession shareCode={session.share_code} sessionName={session.name} />
+          <EditProfileDialog />
           <ModeToggle />
         </div>
       </header>
