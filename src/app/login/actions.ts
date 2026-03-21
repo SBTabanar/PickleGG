@@ -96,7 +96,7 @@ export async function signup(formData: FormData) {
 
   const supabase = await createClient()
 
-  const { error } = await supabase.auth.signUp({
+  const { data, error } = await supabase.auth.signUp({
     email: validated.email,
     password: validated.password,
   })
@@ -106,6 +106,18 @@ export async function signup(formData: FormData) {
     console.error('Signup error:', error.message)
     const redirectParam = redirectTo !== '/dashboard' ? `&redirect=${encodeURIComponent(redirectTo)}` : ''
     redirect(`/login?error=${encodeURIComponent('Could not create account. Please try again.')}${redirectParam}`)
+  }
+
+  // Auto-create a profile row for the new user
+  if (data.user) {
+    const displayName = validated.email.split('@')[0]
+    await supabase.from('profiles').upsert({
+      id: data.user.id,
+      display_name: displayName,
+      games_played: 0,
+      wins: 0,
+      losses: 0,
+    }, { onConflict: 'id' })
   }
 
   revalidatePath('/', 'layout')

@@ -1,0 +1,124 @@
+'use server'
+
+import { createClient } from '@/utils/supabase/server'
+
+async function verifyManager(sessionId: string) {
+  const supabase = await createClient()
+  const { data: { user } } = await supabase.auth.getUser()
+  if (!user) throw new Error('Not authenticated')
+
+  const { data: session } = await supabase
+    .from('sessions')
+    .select('creator_id')
+    .eq('id', sessionId)
+    .single()
+
+  if (!session || session.creator_id !== user.id) {
+    throw new Error('Not authorized — only the session manager can perform this action')
+  }
+
+  return { supabase, userId: user.id }
+}
+
+export async function startMatchAction(sessionId: string, courtId: string, playerIds: string[]) {
+  const { supabase } = await verifyManager(sessionId)
+
+  if (playerIds.length !== 4) {
+    return { error: 'Exactly 4 players required to start a match' }
+  }
+
+  const team1 = [playerIds[0], playerIds[1]]
+  const team2 = [playerIds[2], playerIds[3]]
+
+  const { data: game, error: gameError } = await supabase
+    .from('games')
+    .insert({
+      session_id: sessionId,
+      court_id: courtId,
+      team1_player_ids: team1,
+      team2_player_ids: team2,
+      status: 'in_progress',
+    })
+    .select()
+    .single()
+
+  if (gameError) return { error: gameError.message }
+
+  const { error: courtError } = await supabase
+    .from('courts')
+    .update({ status: 'in_use', current_game_id: game.id })
+    .eq('id', courtId)
+
+  if (courtError) return { error: courtError.message }
+
+  // Mark relevant queue entries as playing
+  const { data: entries } = await supabase
+    .from('queue_entries')
+    .select('id, player_ids')
+    .eq('session_id', sessionId)
+    .eq('status', 'waiting')
+
+  if (entries) {
+    const entryIdsToUpdate = entries
+      .filter(e => e.player_ids.some((pid: string) => playerIds.includes(pid)))
+      .map(e => e.id)
+
+    if (entryIdsToUpdate.length > 0) {
+      await supabase
+        .from('queue_entries')
+        .update({ status: 'playing' })
+        .in('id', entryIdsToUpdate)
+    }
+  }
+
+  return { success: true }
+}
+
+export async function endGameAction(sessionId: string, gameId: string, courtId: string) {
+  const { supabase } = await verifyManager(sessionId)
+
+  const { data: game } = await supabase
+    .from('games')
+    .select('team1_player_ids, team2_player_ids')
+    .eq('id', gameId)
+    .single()
+
+  if (!game) return { error: 'Game not found' }
+
+  const { error: gameError } = await supabase
+    .from('games')
+    .update({ status: 'completed', completed_at: new Date().toISOString() })
+    .eq('id', gameId)
+
+  if (gameError) return { error: gameError.message }
+
+  const { error: courtError } = await supabase
+    .from('courts')
+    .update({ status: 'open', current_game_id: null })
+    .eq('id', courtId)
+
+  if (courtError) return { error: courtError.message }
+
+  // Return players to queue
+  const allPlayers = [...game.team1_player_ids, ...game.team2_player_ids]
+  await supabase.from('queue_entries').insert({
+    session_id: sessionId,
+    player_ids: allPlayers,
+    status: 'waiting',
+    bucket_index: 0,
+  })
+
+  return { success: true }
+}
+
+export async function removeFromQueueAction(sessionId: string, entryIds: string[]) {
+  const { supabase } = await verifyManager(sessionId)
+
+  const { error } = await supabase
+    .from('queue_entries')
+    .delete()
+    .in('id', entryIds)
+
+  if (error) return { error: error.message }
+  return { success: true }
+}

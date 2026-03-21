@@ -32,6 +32,7 @@ import { MatchHistory } from "@/components/match-history"
 import { CourtVisual } from "@/components/court-visual"
 import { PlayerAvatar } from "@/components/player-avatar"
 import { Game, Profile } from "@/types/database"
+import { startMatchAction, endGameAction, removeFromQueueAction } from "./actions"
 
 const supabase = createClient()
 
@@ -162,41 +163,13 @@ export function ManagerDashboard({
   async function endGame(gameId: string, courtId: string) {
     setLoading(courtId)
     setActionError(null)
-    try {
-      const game = games.find(g => g.id === gameId)
-      if (!game) throw new Error("Game not found")
-
-      const { error: gameError } = await supabase
-        .from("games")
-        .update({
-          status: "completed",
-          completed_at: new Date().toISOString(),
-        })
-        .eq("id", gameId)
-      if (gameError) throw gameError
-
-      const { error: courtError } = await supabase
-        .from("courts")
-        .update({ status: "open", current_game_id: null })
-        .eq("id", courtId)
-      if (courtError) throw courtError
-
-      // Return players to queue
-      const allPlayers = [...game.team1_player_ids, ...game.team2_player_ids]
-      await supabase.from("queue_entries").insert({
-        session_id: session.id,
-        player_ids: allPlayers,
-        status: "waiting",
-        bucket_index: 0,
-      })
-
+    const result = await endGameAction(session.id, gameId, courtId)
+    if (result.error) {
+      setActionError(result.error)
+    } else {
       clearTimerForGame(gameId)
-    } catch (err) {
-      console.error("Error ending game:", err instanceof Error ? err.message : "Unknown error")
-      setActionError("Failed to end game. Please try again.")
-    } finally {
-      setLoading(null)
     }
+    setLoading(null)
   }
 
   async function startMatch(courtId: string) {
@@ -204,63 +177,20 @@ export function ManagerDashboard({
       setActionError("Need at least 4 players in the first group to start a match.")
       return
     }
-
     setLoading(courtId)
     setActionError(null)
-    try {
-      const players = buckets[0].players
-      const team1 = [players[0], players[1]]
-      const team2 = [players[2], players[3]]
-
-      const { data: game, error: gameError } = await supabase
-        .from("games")
-        .insert({
-          session_id: session.id,
-          court_id: courtId,
-          team1_player_ids: team1,
-          team2_player_ids: team2,
-          status: "in_progress",
-        })
-        .select()
-        .single()
-
-      if (gameError) throw gameError
-
-      const { error: courtError } = await supabase
-        .from("courts")
-        .update({
-          status: "in_use",
-          current_game_id: game.id,
-        })
-        .eq("id", courtId)
-
-      if (courtError) throw courtError
-
-      const { error: queueError } = await supabase
-        .from("queue_entries")
-        .update({ status: "playing" })
-        .in("id", queue.filter(q => q.player_ids.some(pid => players.includes(pid))).map(q => q.id))
-
-      if (queueError) throw queueError
-
-    } catch (err) {
-      console.error("Error starting match:", err instanceof Error ? err.message : "Unknown error")
-      setActionError("Failed to start match. Please try again.")
-    } finally {
-      setLoading(null)
+    const result = await startMatchAction(session.id, courtId, buckets[0].players)
+    if (result.error) {
+      setActionError(result.error)
     }
+    setLoading(null)
   }
 
   async function removeFromQueue(entryIds: string[]) {
-    try {
-      const { error } = await supabase
-        .from("queue_entries")
-        .delete()
-        .in("id", entryIds)
-      if (error) throw error
-    } catch (err) {
-      console.error("Error removing from queue:", err instanceof Error ? err.message : "Unknown error")
-      setActionError("Failed to remove from queue. Please try again.")
+    setActionError(null)
+    const result = await removeFromQueueAction(session.id, entryIds)
+    if (result.error) {
+      setActionError(result.error)
     }
   }
 
