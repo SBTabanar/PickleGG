@@ -88,4 +88,5 @@ export type Game = {
   winner_team: 1 | 2 | null
   created_at: string
   completed_at: string | null
+  scored_by: string | null
 }

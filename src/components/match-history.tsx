@@ -1,13 +1,14 @@
 "use client"
 
 import { Game } from "@/types/database"
-import { Trophy, Clock } from "lucide-react"
+import { Trophy, Clock, UserCheck } from "lucide-react"
 
 interface MatchHistoryProps {
   games: Game[]
+  playerNames?: Record<string, string>
 }
 
-export function MatchHistory({ games }: MatchHistoryProps) {
+export function MatchHistory({ games, playerNames = {} }: MatchHistoryProps) {
   if (games.length === 0) {
     return (
       <div className="flex flex-col items-center justify-center py-16 border border-dashed rounded-xl text-center">
@@ -29,6 +30,9 @@ export function MatchHistory({ games }: MatchHistoryProps) {
               minute: "2-digit",
             })
           : ""
+        const scoredByName = game.scored_by
+          ? playerNames[game.scored_by] || game.scored_by.slice(0, 6)
+          : null
 
         return (
           <div
@@ -56,7 +60,15 @@ export function MatchHistory({ games }: MatchHistoryProps) {
                 </div>
               </div>
             </div>
-            <span className="text-xs text-muted-foreground">{completedAt}</span>
+            <div className="flex items-center gap-2">
+              {scoredByName && (
+                <span className="inline-flex items-center gap-1 text-[10px] text-muted-foreground">
+                  <UserCheck className="h-3 w-3" />
+                  {scoredByName}
+                </span>
+              )}
+              <span className="text-xs text-muted-foreground">{completedAt}</span>
+            </div>
           </div>
         )
       })}

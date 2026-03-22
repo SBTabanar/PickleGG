@@ -885,7 +885,7 @@ export function ManagerDashboard({
                 <h2 className="text-sm font-semibold uppercase tracking-wide text-muted-foreground">Match History</h2>
                 <span className="text-xs text-muted-foreground ml-1">({completedGames.length} games)</span>
               </div>
-              <MatchHistory games={completedGames} />
+              <MatchHistory games={completedGames} playerNames={playerNames} />
             </section>
           )}
         </div>

@@ -16,7 +16,6 @@ interface FloatingReaction {
   id: string
   emoji: string
   x: number
-  createdAt: number
 }
 
 interface GameReactionsProps {
@@ -32,15 +31,15 @@ export function GameReactions({ sessionId, gameId, canReact = true }: GameReacti
   const supabaseRef = useRef(createClient())
 
   const addFloating = useCallback((emoji: string) => {
+    const id = `${Date.now()}-${Math.random()}`
     const reaction: FloatingReaction = {
-      id: `${Date.now()}-${Math.random()}`,
+      id,
       emoji,
       x: 10 + Math.random() * 80,
-      createdAt: Date.now(),
     }
     setFloatingReactions(prev => [...prev, reaction])
     setTimeout(() => {
-      setFloatingReactions(prev => prev.filter(r => r.id !== reaction.id))
+      setFloatingReactions(prev => prev.filter(r => r.id !== id))
     }, 2500)
   }, [])
 
@@ -73,24 +72,25 @@ export function GameReactions({ sessionId, gameId, canReact = true }: GameReacti
       event: "reaction",
       payload: { emoji },
     })
-    // Also show locally
     addFloating(emoji)
   }
 
   return (
     <div className="relative">
-      {/* Floating reactions */}
-      <div className="pointer-events-none absolute inset-0 overflow-hidden z-20">
-        {floatingReactions.map((r) => (
-          <span
-            key={r.id}
-            className="absolute text-2xl animate-reaction-float"
-            style={{ left: `${r.x}%`, bottom: 0 }}
-          >
-            {r.emoji}
-          </span>
-        ))}
-      </div>
+      {/* Floating reactions — positioned above the reaction bar */}
+      {floatingReactions.length > 0 && (
+        <div className="pointer-events-none absolute bottom-full left-0 right-0 h-32 z-20">
+          {floatingReactions.map((r) => (
+            <span
+              key={r.id}
+              className="absolute text-2xl animate-reaction-float"
+              style={{ left: `${r.x}%`, bottom: 0 }}
+            >
+              {r.emoji}
+            </span>
+          ))}
+        </div>
+      )}
 
       {/* Reaction bar */}
       {canReact && (

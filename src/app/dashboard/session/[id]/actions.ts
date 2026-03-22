@@ -446,3 +446,101 @@ export async function reorderQueueAction(sessionId: string, orderedEntryIds: str
 
   return { success: true }
 }
+
+export async function playerSubmitScoreAction(
+  sessionId: string,
+  gameId: string,
+  courtId: string,
+  team1Score: number,
+  team2Score: number
+) {
+  const supabase = await createClient()
+  const { data: { user } } = await supabase.auth.getUser()
+  if (!user) throw new Error('Not authenticated')
+
+  // Verify this player is actually in the game
+  const { data: game } = await supabase
+    .from('games')
+    .select('team1_player_ids, team2_player_ids, status')
+    .eq('id', gameId)
+    .single()
+
+  if (!game) return { error: 'Game not found' }
+  if (game.status !== 'in_progress') return { error: 'Game is not in progress' }
+
+  const allPlayers = [...game.team1_player_ids, ...game.team2_player_ids]
+  if (!allPlayers.includes(user.id)) {
+    return { error: 'You are not in this game' }
+  }
+
+  if (team1Score === team2Score) return { error: 'Scores cannot be tied' }
+
+  const winnerTeam = team1Score > team2Score ? 1 : 2
+
+  // Update game with scores and who submitted
+  const { error: gameError } = await supabase
+    .from('games')
+    .update({
+      team1_score: team1Score,
+      team2_score: team2Score,
+      status: 'completed',
+      winner_team: winnerTeam,
+      completed_at: new Date().toISOString(),
+      scored_by: user.id,
+    })
+    .eq('id', gameId)
+
+  if (gameError) return { error: gameError.message }
+
+  // Update court
+  await supabase
+    .from('courts')
+    .update({ status: 'open', current_game_id: null })
+    .eq('id', courtId)
+
+  // Update player stats
+  for (const pid of allPlayers) {
+    const isWin = (game.team1_player_ids.includes(pid) && winnerTeam === 1) ||
+                  (game.team2_player_ids.includes(pid) && winnerTeam === 2)
+
+    const { data: profile } = await supabase
+      .from('profiles')
+      .select('games_played, wins, losses')
+      .eq('id', pid)
+      .single()
+
+    if (profile) {
+      await supabase.from('profiles').update({
+        games_played: (profile.games_played || 0) + 1,
+        wins: isWin ? (profile.wins || 0) + 1 : profile.wins || 0,
+        losses: !isWin ? (profile.losses || 0) + 1 : profile.losses || 0,
+      }).eq('id', pid)
+    }
+  }
+
+  // Clean up playing queue entries
+  const { data: playingEntries } = await supabase
+    .from('queue_entries')
+    .select('id, player_ids')
+    .eq('session_id', sessionId)
+    .eq('status', 'playing')
+
+  if (playingEntries) {
+    const entriesToDelete = playingEntries
+      .filter(e => e.player_ids.some((pid: string) => allPlayers.includes(pid)))
+      .map(e => e.id)
+    if (entriesToDelete.length > 0) {
+      await supabase.from('queue_entries').delete().in('id', entriesToDelete)
+    }
+  }
+
+  // Return players to queue
+  await supabase.from('queue_entries').insert({
+    session_id: sessionId,
+    player_ids: allPlayers,
+    status: 'waiting',
+    bucket_index: 0,
+  })
+
+  return { success: true }
+}

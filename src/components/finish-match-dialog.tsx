@@ -14,7 +14,7 @@ import {
 } from "@/components/ui/dialog"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
-import { rematchAction, shuffleRematchAction } from "@/app/dashboard/session/[id]/actions"
+import { rematchAction, shuffleRematchAction, playerSubmitScoreAction } from "@/app/dashboard/session/[id]/actions"
 import { Trophy, Repeat, Shuffle, ArrowRight } from "lucide-react"
 
 interface FinishMatchDialogProps {
@@ -25,6 +25,8 @@ interface FinishMatchDialogProps {
   team2Players: string[]
   playerNames?: Record<string, string>
   onFinished: () => void
+  isPlayer?: boolean
+  userId?: string
 }
 
 type Phase = "score_entry" | "post_game"
@@ -36,7 +38,9 @@ export function FinishMatchDialog({
   team1Players,
   team2Players,
   playerNames = {},
-  onFinished
+  onFinished,
+  isPlayer = false,
+  userId,
 }: FinishMatchDialogProps) {
   const [team1Score, setTeam1Score] = useState("0")
   const [team2Score, setTeam2Score] = useState("0")
@@ -80,69 +84,69 @@ export function FinishMatchDialog({
     const winnerTeam = t1Score > t2Score ? 1 : 2
 
     try {
-      // 1. Update Game
-      const { error: gameError } = await supabase
-        .from("games")
-        .update({
-          team1_score: t1Score,
-          team2_score: t2Score,
-          status: "completed",
-          winner_team: winnerTeam,
-          completed_at: new Date().toISOString(),
-        })
-        .eq("id", gameId)
-
-      if (gameError) throw gameError
-
-      // 2. Update Court
-      const { error: courtError } = await supabase
-        .from("courts")
-        .update({
-          status: "open",
-          current_game_id: null,
-        })
-        .eq("id", courtId)
-
-      if (courtError) throw courtError
-
-      // 3. Update Player Stats
-      const allPlayers = [...team1Players, ...team2Players]
-      const updatePromises = allPlayers.map(async (pid) => {
-        const isWin = (team1Players.includes(pid) && winnerTeam === 1) ||
-                      (team2Players.includes(pid) && winnerTeam === 2)
-
-        const { data: profile, error: profileError } = await supabase
-          .from("profiles")
-          .select("games_played, wins, losses")
-          .eq("id", pid)
-          .single()
-
-        if (profileError) {
-          console.error(`Failed to fetch profile for player ${pid}:`, profileError.message)
+      if (isPlayer) {
+        // Player submits score via server action
+        const result = await playerSubmitScoreAction(sessionId, gameId, courtId, t1Score, t2Score)
+        if (result.error) {
+          setError(result.error)
           return
         }
+      } else {
+        // Manager submits score via direct Supabase calls
+        const { error: gameError } = await supabase
+          .from("games")
+          .update({
+            team1_score: t1Score,
+            team2_score: t2Score,
+            status: "completed",
+            winner_team: winnerTeam,
+            completed_at: new Date().toISOString(),
+            scored_by: userId || null,
+          })
+          .eq("id", gameId)
 
-        if (profile) {
-          const { error: updateError } = await supabase.from("profiles").update({
-            games_played: (profile.games_played || 0) + 1,
-            wins: isWin ? (profile.wins || 0) + 1 : (profile.wins || 0),
-            losses: !isWin ? (profile.losses || 0) + 1 : (profile.losses || 0),
-          }).eq("id", pid)
+        if (gameError) throw gameError
 
-          if (updateError) {
-            console.error(`Failed to update stats for player ${pid}:`, updateError.message)
+        const { error: courtError } = await supabase
+          .from("courts")
+          .update({
+            status: "open",
+            current_game_id: null,
+          })
+          .eq("id", courtId)
+
+        if (courtError) throw courtError
+
+        const allPlayers = [...team1Players, ...team2Players]
+        const updatePromises = allPlayers.map(async (pid) => {
+          const isWin = (team1Players.includes(pid) && winnerTeam === 1) ||
+                        (team2Players.includes(pid) && winnerTeam === 2)
+
+          const { data: profile, error: profileError } = await supabase
+            .from("profiles")
+            .select("games_played, wins, losses")
+            .eq("id", pid)
+            .single()
+
+          if (profileError) return
+
+          if (profile) {
+            await supabase.from("profiles").update({
+              games_played: (profile.games_played || 0) + 1,
+              wins: isWin ? (profile.wins || 0) + 1 : (profile.wins || 0),
+              losses: !isWin ? (profile.losses || 0) + 1 : (profile.losses || 0),
+            }).eq("id", pid)
           }
-        }
-      })
-      await Promise.all(updatePromises)
+        })
+        await Promise.all(updatePromises)
 
-      // 4. Return players to queue
-      await supabase.from("queue_entries").insert({
-        session_id: sessionId,
-        player_ids: allPlayers,
-        status: "waiting",
-        bucket_index: 0,
-      })
+        await supabase.from("queue_entries").insert({
+          session_id: sessionId,
+          player_ids: allPlayers,
+          status: "waiting",
+          bucket_index: 0,
+        })
+      }
 
       setFinalScores({ t1: t1Score, t2: t2Score, winner: winnerTeam as 1 | 2 })
       setPhase("post_game")

@@ -28,6 +28,7 @@ import { QueueWithFriendsDialog } from "@/components/queue-with-friends-dialog"
 import { useNotifications } from "@/hooks/use-notifications"
 import { NotificationToggle } from "@/components/notification-toggle"
 import { GameReactions } from "@/components/game-reactions"
+import { FinishMatchDialog } from "@/components/finish-match-dialog"
 import { ChallengeFriendDialog } from "@/components/challenge-friend-dialog"
 import { ChallengeNotification } from "@/components/challenge-notification"
 import { getSessionChallengesAction } from "./challenge-actions"
@@ -561,6 +562,19 @@ export function PlayerDashboard({
                   playerNames={playerNames}
                 />
                 <GameReactions sessionId={session.id} gameId={playerStatus.game.id} />
+              </div>
+              <div className="mt-4">
+                <FinishMatchDialog
+                  sessionId={session.id}
+                  gameId={playerStatus.game.id}
+                  courtId={playerStatus.court.id}
+                  team1Players={playerStatus.game.team1_player_ids}
+                  team2Players={playerStatus.game.team2_player_ids}
+                  playerNames={playerNames}
+                  isPlayer={true}
+                  userId={userId}
+                  onFinished={() => {}}
+                />
               </div>
             </div>
           )}
