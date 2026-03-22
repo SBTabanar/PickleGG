@@ -31,7 +31,7 @@ import { MatchHistory } from "@/components/match-history"
 import { CourtVisual } from "@/components/court-visual"
 import { PlayerAvatar } from "@/components/player-avatar"
 import { Game, Profile } from "@/types/database"
-import { startMatchAction, endGameAction, removeFromQueueAction, reorderQueueAction, forceRequeueAction, sendAnnouncementAction, getAnnouncementsAction, endSessionAction, getSessionSummaryAction } from "./actions"
+import { startMatchAction, endGameAction, removeFromQueueAction, reorderQueueAction, forceRequeueAction, sendAnnouncementAction, getAnnouncementsAction, endSessionAction, getSessionSummaryAction, cancelCheckinGameAction, forceStartGameAction } from "./actions"
 import { EditGroupDialog } from "@/components/edit-group-dialog"
 import { GameReactions } from "@/components/game-reactions"
 import { SessionAnnouncement } from "@/types/database"
@@ -99,6 +99,45 @@ function GameCountdown({ endsAt, onExpired }: { endsAt: number; onExpired?: () =
     <span className={`inline-flex items-center gap-1 text-xs font-semibold tabular-nums ${expired ? "text-destructive animate-pulse" : "text-primary"}`}>
       <AlarmClock className="h-3 w-3" />
       {expired ? "TIME'S UP" : remaining}
+    </span>
+  )
+}
+
+const CHECKIN_TIMEOUT_MS = 60_000 // 1 minute
+
+function CheckinCountdown({ gameCreatedAt, onExpired }: { gameCreatedAt: string; onExpired: () => void }) {
+  const [remaining, setRemaining] = useState("")
+  const expiredCalledRef = useRef(false)
+
+  useEffect(() => {
+    expiredCalledRef.current = false
+  }, [gameCreatedAt])
+
+  useEffect(() => {
+    const deadline = new Date(gameCreatedAt).getTime() + CHECKIN_TIMEOUT_MS
+    function update() {
+      const diff = Math.max(0, Math.ceil((deadline - Date.now()) / 1000))
+      if (diff <= 0) {
+        setRemaining("0:00")
+        if (!expiredCalledRef.current) {
+          expiredCalledRef.current = true
+          onExpired()
+        }
+        return
+      }
+      const mins = Math.floor(diff / 60)
+      const secs = diff % 60
+      setRemaining(`${mins}:${secs.toString().padStart(2, "0")}`)
+    }
+    update()
+    const interval = setInterval(update, 1000)
+    return () => clearInterval(interval)
+  }, [gameCreatedAt, onExpired])
+
+  return (
+    <span className="inline-flex items-center gap-1 text-xs font-semibold tabular-nums text-amber-600 dark:text-amber-400">
+      <AlarmClock className="h-3 w-3" />
+      {remaining}
     </span>
   )
 }
@@ -1007,32 +1046,73 @@ export function ManagerDashboard({
                           )}
 
                           {/* Check-in status */}
-                          {activeGame && activeGame.checked_in_player_ids != null && (
-                            <div className="rounded-lg border bg-muted/30 px-3 py-2">
-                              <p className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground mb-1.5">Player Check-in</p>
-                              <div className="flex flex-wrap gap-1.5">
-                                {[...activeGame.team1_player_ids, ...activeGame.team2_player_ids].map((pid) => {
-                                  const isCheckedIn = activeGame.checked_in_player_ids?.includes(pid)
-                                  return (
-                                    <span
-                                      key={pid}
-                                      className={`inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[11px] font-medium ${
-                                        isCheckedIn
-                                          ? 'bg-primary/10 text-primary border border-primary/20'
-                                          : 'bg-destructive/10 text-destructive border border-destructive/20 animate-pulse'
-                                      }`}
+                          {activeGame && activeGame.checked_in_player_ids != null && (() => {
+                            const allGamePlayers = [...activeGame.team1_player_ids, ...activeGame.team2_player_ids]
+                            const allCheckedIn = activeGame.checked_in_player_ids?.length === allGamePlayers.length
+                            return (
+                              <div className="rounded-lg border border-amber-500/30 bg-amber-50/50 dark:bg-amber-950/20 px-3 py-2">
+                                <div className="flex items-center justify-between mb-1.5">
+                                  <p className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">Player Check-in</p>
+                                  {!allCheckedIn && (
+                                    <CheckinCountdown
+                                      gameCreatedAt={activeGame.created_at}
+                                      onExpired={() => {
+                                        cancelCheckinGameAction(session.id, activeGame.id, court.id)
+                                      }}
+                                    />
+                                  )}
+                                </div>
+                                <div className="flex flex-wrap gap-1.5">
+                                  {allGamePlayers.map((pid) => {
+                                    const isCheckedIn = activeGame.checked_in_player_ids?.includes(pid)
+                                    return (
+                                      <span
+                                        key={pid}
+                                        className={`inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[11px] font-medium ${
+                                          isCheckedIn
+                                            ? 'bg-primary/10 text-primary border border-primary/20'
+                                            : 'bg-destructive/10 text-destructive border border-destructive/20 animate-pulse'
+                                        }`}
+                                      >
+                                        {isCheckedIn ? <CheckCircle2 className="h-3 w-3" /> : <XCircle className="h-3 w-3" />}
+                                        {playerNames[pid] || pid.slice(0, 6)}
+                                      </span>
+                                    )
+                                  })}
+                                </div>
+                                {allCheckedIn ? (
+                                  <p className="text-[11px] text-primary font-medium mt-1.5">All players checked in!</p>
+                                ) : (
+                                  <div className="flex gap-2 mt-2">
+                                    <Button
+                                      variant="outline"
+                                      size="sm"
+                                      className="h-7 text-xs"
+                                      onClick={async () => {
+                                        setActionError(null)
+                                        const result = await forceStartGameAction(session.id, activeGame.id)
+                                        if (result.error) setActionError(result.error)
+                                      }}
                                     >
-                                      {isCheckedIn ? <CheckCircle2 className="h-3 w-3" /> : <XCircle className="h-3 w-3" />}
-                                      {playerNames[pid] || pid.slice(0, 6)}
-                                    </span>
-                                  )
-                                })}
+                                      Force Start
+                                    </Button>
+                                    <Button
+                                      variant="ghost"
+                                      size="sm"
+                                      className="h-7 text-xs text-destructive"
+                                      onClick={async () => {
+                                        setActionError(null)
+                                        const result = await cancelCheckinGameAction(session.id, activeGame.id, court.id)
+                                        if (result.error) setActionError(result.error)
+                                      }}
+                                    >
+                                      Cancel Match
+                                    </Button>
+                                  </div>
+                                )}
                               </div>
-                              {activeGame.checked_in_player_ids?.length === [...activeGame.team1_player_ids, ...activeGame.team2_player_ids].length && (
-                                <p className="text-[11px] text-primary font-medium mt-1.5">All players checked in!</p>
-                              )}
-                            </div>
-                          )}
+                            )
+                          })()}
 
                           <div className="relative">
                             <CourtVisual

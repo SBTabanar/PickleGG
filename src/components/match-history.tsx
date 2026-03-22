@@ -19,6 +19,14 @@ export function MatchHistory({ games, playerNames = {} }: MatchHistoryProps) {
     )
   }
 
+  function getName(pid: string) {
+    return playerNames[pid] || pid.slice(0, 6)
+  }
+
+  function teamLabel(pids: string[]) {
+    return pids.map(getName).join(" & ")
+  }
+
   return (
     <div className="grid gap-2">
       {games.map((game, index) => {
@@ -37,37 +45,48 @@ export function MatchHistory({ games, playerNames = {} }: MatchHistoryProps) {
         return (
           <div
             key={game.id}
-            className="flex items-center justify-between px-4 py-3 rounded-xl border bg-card hover:bg-muted/30 transition-colors animate-fade-in"
+            className="px-4 py-3 rounded-xl border bg-card hover:bg-muted/30 transition-colors animate-fade-in"
             style={{ animationDelay: `${index * 50}ms` }}
           >
-            <div className="flex items-center gap-3">
-              <span className="text-xs font-medium text-muted-foreground w-6 text-center">
-                #{games.length - index}
-              </span>
-              <div className="flex items-center gap-2">
-                <div className={`flex items-center gap-1.5 rounded-md px-2 py-1 text-sm font-semibold ${
-                  team1Won ? "bg-primary/10 text-primary" : "text-muted-foreground"
-                }`}>
-                  {team1Won && <Trophy className="h-3 w-3" />}
-                  <span className="tabular-nums">{game.team1_score}</span>
-                </div>
-                <span className="text-xs text-muted-foreground">-</span>
-                <div className={`flex items-center gap-1.5 rounded-md px-2 py-1 text-sm font-semibold ${
-                  team2Won ? "bg-primary/10 text-primary" : "text-muted-foreground"
-                }`}>
-                  {team2Won && <Trophy className="h-3 w-3" />}
-                  <span className="tabular-nums">{game.team2_score}</span>
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-3">
+                <span className="text-xs font-medium text-muted-foreground w-6 text-center">
+                  #{games.length - index}
+                </span>
+                <div className="flex items-center gap-2">
+                  <div className={`flex items-center gap-1.5 rounded-md px-2 py-1 text-sm font-semibold ${
+                    team1Won ? "bg-primary/10 text-primary" : "text-muted-foreground"
+                  }`}>
+                    {team1Won && <Trophy className="h-3 w-3" />}
+                    <span className="tabular-nums">{game.team1_score}</span>
+                  </div>
+                  <span className="text-xs text-muted-foreground">-</span>
+                  <div className={`flex items-center gap-1.5 rounded-md px-2 py-1 text-sm font-semibold ${
+                    team2Won ? "bg-primary/10 text-primary" : "text-muted-foreground"
+                  }`}>
+                    {team2Won && <Trophy className="h-3 w-3" />}
+                    <span className="tabular-nums">{game.team2_score}</span>
+                  </div>
                 </div>
               </div>
+              <div className="flex items-center gap-2">
+                {scoredByName && (
+                  <span className="inline-flex items-center gap-1 text-[10px] text-muted-foreground">
+                    <UserCheck className="h-3 w-3" />
+                    {scoredByName}
+                  </span>
+                )}
+                <span className="text-xs text-muted-foreground">{completedAt}</span>
+              </div>
             </div>
-            <div className="flex items-center gap-2">
-              {scoredByName && (
-                <span className="inline-flex items-center gap-1 text-[10px] text-muted-foreground">
-                  <UserCheck className="h-3 w-3" />
-                  {scoredByName}
-                </span>
-              )}
-              <span className="text-xs text-muted-foreground">{completedAt}</span>
+            <div className="flex items-center gap-3 mt-1.5 ml-9">
+              <p className={`text-xs ${team1Won ? "text-primary font-medium" : "text-muted-foreground"}`}>
+                {teamLabel(game.team1_player_ids)}
+              </p>
+              <span className="text-[10px] text-muted-foreground">vs</span>
+              <p className={`text-xs ${team2Won ? "text-primary font-medium" : "text-muted-foreground"}`}>
+                {teamLabel(game.team2_player_ids)}
+              </p>
             </div>
           </div>
         )

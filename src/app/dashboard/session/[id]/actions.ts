@@ -295,6 +295,68 @@ export async function checkInAction(sessionId: string, gameId: string) {
   return { success: true }
 }
 
+export async function cancelCheckinGameAction(sessionId: string, gameId: string, courtId: string) {
+  const { supabase } = await verifyManager(sessionId)
+
+  const { data: game } = await supabase
+    .from('games')
+    .select('team1_player_ids, team2_player_ids, checked_in_player_ids')
+    .eq('id', gameId)
+    .single()
+
+  if (!game) return { error: 'Game not found' }
+
+  // Delete the game
+  await supabase.from('games').delete().eq('id', gameId)
+
+  // Free the court
+  await supabase
+    .from('courts')
+    .update({ status: 'open', current_game_id: null })
+    .eq('id', courtId)
+
+  const allPlayers = [...game.team1_player_ids, ...game.team2_player_ids]
+
+  // Clean up any queue entries for these players
+  const { data: entries } = await supabase
+    .from('queue_entries')
+    .select('id, player_ids')
+    .eq('session_id', sessionId)
+    .in('status', ['waiting', 'playing'])
+
+  if (entries) {
+    const toDelete = entries
+      .filter(e => e.player_ids.some((pid: string) => allPlayers.includes(pid)))
+      .map(e => e.id)
+    if (toDelete.length > 0) {
+      await supabase.from('queue_entries').delete().in('id', toDelete)
+    }
+  }
+
+  // Re-queue all players
+  await supabase.from('queue_entries').insert({
+    session_id: sessionId,
+    player_ids: allPlayers,
+    status: 'waiting',
+    bucket_index: 0,
+  })
+
+  return { success: true }
+}
+
+export async function forceStartGameAction(sessionId: string, gameId: string) {
+  const { supabase } = await verifyManager(sessionId)
+
+  // Clear the checked_in requirement by setting it to null
+  const { error } = await supabase
+    .from('games')
+    .update({ checked_in_player_ids: null })
+    .eq('id', gameId)
+
+  if (error) return { error: error.message }
+  return { success: true }
+}
+
 export async function removeFromQueueAction(sessionId: string, entryIds: string[]) {
   try {
     const { supabase } = await verifyManager(sessionId)

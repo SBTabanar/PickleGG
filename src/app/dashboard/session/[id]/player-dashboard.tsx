@@ -23,6 +23,7 @@ import {
   Coffee,
   Megaphone,
   CheckCircle2,
+  AlarmClock,
 } from "lucide-react"
 import { joinQueueAction, leaveQueueAction, restPlayerAction, rejoinFromRestAction, getAnnouncementsAction, checkInAction } from "./actions"
 import { EditProfileDialog } from "@/components/edit-profile-dialog"
@@ -44,6 +45,29 @@ interface PlayerDashboardProps {
   initialCourts: Court[]
   initialQueue: QueueEntry[]
   userId: string
+}
+
+function CheckinTimer({ gameCreatedAt }: { gameCreatedAt: string }) {
+  const [remaining, setRemaining] = useState("")
+
+  useEffect(() => {
+    const deadline = new Date(gameCreatedAt).getTime() + 60_000
+    function update() {
+      const diff = Math.max(0, Math.ceil((deadline - Date.now()) / 1000))
+      const secs = diff % 60
+      setRemaining(`0:${secs.toString().padStart(2, "0")}`)
+    }
+    update()
+    const interval = setInterval(update, 1000)
+    return () => clearInterval(interval)
+  }, [gameCreatedAt])
+
+  return (
+    <span className="inline-flex items-center gap-1 text-xs font-semibold tabular-nums text-amber-600 dark:text-amber-400">
+      <AlarmClock className="h-3 w-3" />
+      {remaining}
+    </span>
+  )
 }
 
 function MatchTimer({ startedAt }: { startedAt: string }) {
@@ -594,7 +618,10 @@ export function PlayerDashboard({
               {playerStatus.game.checked_in_player_ids != null &&
                 !playerStatus.game.checked_in_player_ids.includes(userId) && (
                 <div className="mb-4 rounded-xl border-2 border-amber-500/40 bg-amber-50 dark:bg-amber-950/20 p-4 text-center">
-                  <p className="text-sm font-semibold mb-2">Confirm you&apos;re at the court</p>
+                  <div className="flex items-center justify-center gap-2 mb-2">
+                    <p className="text-sm font-semibold">Confirm you&apos;re at the court</p>
+                    <CheckinTimer gameCreatedAt={playerStatus.game.created_at} />
+                  </div>
                   <Button
                     onClick={() => handleCheckIn(playerStatus.game.id)}
                     disabled={checkingIn}
