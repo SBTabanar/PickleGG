@@ -296,15 +296,19 @@ export async function checkInAction(sessionId: string, gameId: string) {
 }
 
 export async function removeFromQueueAction(sessionId: string, entryIds: string[]) {
-  const { supabase } = await verifyManager(sessionId)
+  try {
+    const { supabase } = await verifyManager(sessionId)
 
-  const { error } = await supabase
-    .from('queue_entries')
-    .delete()
-    .in('id', entryIds)
+    const { error } = await supabase
+      .from('queue_entries')
+      .delete()
+      .in('id', entryIds)
 
-  if (error) return { error: error.message }
-  return { success: true }
+    if (error) return { error: error.message }
+    return { success: true }
+  } catch (err) {
+    return { error: err instanceof Error ? err.message : 'Failed to remove from queue' }
+  }
 }
 
 export async function updateQueueEntryAction(sessionId: string, entryId: string, playerIds: string[]) {
@@ -408,6 +412,30 @@ export async function joinQueueAction(sessionId: string, friendIds?: string[]) {
     }
   }
 
+  // Try to fill into an existing group that has room (< 4 players)
+  const { data: waitingEntries } = await supabase
+    .from('queue_entries')
+    .select('id, player_ids')
+    .eq('session_id', sessionId)
+    .eq('status', 'waiting')
+    .order('joined_at', { ascending: true })
+
+  if (waitingEntries) {
+    for (const entry of waitingEntries) {
+      const spotsAvailable = 4 - entry.player_ids.length
+      if (spotsAvailable >= playerIds.length) {
+        // Add to this existing group
+        const { error } = await supabase
+          .from('queue_entries')
+          .update({ player_ids: [...entry.player_ids, ...playerIds] })
+          .eq('id', entry.id)
+        if (error) return { error: error.message }
+        return { success: true }
+      }
+    }
+  }
+
+  // No existing group has room — create a new entry
   const { error } = await supabase.from('queue_entries').insert({
     session_id: sessionId,
     player_ids: playerIds,
