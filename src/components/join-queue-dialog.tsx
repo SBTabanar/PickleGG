@@ -43,7 +43,23 @@ export function JoinQueueDialog({ sessionId, onJoined }: JoinQueueDialogProps) {
   }, [open])
 
   async function fetchProfiles() {
-    const { data } = await supabase.from("profiles").select("*").order("display_name")
+    // Only show players who have joined this session
+    const { data: participants } = await supabase
+      .from("session_participants")
+      .select("user_id")
+      .eq("session_id", sessionId)
+
+    const participantIds = participants?.map(p => p.user_id) || []
+    if (participantIds.length === 0) {
+      setProfiles([])
+      return
+    }
+
+    const { data } = await supabase
+      .from("profiles")
+      .select("*")
+      .in("id", participantIds)
+      .order("display_name")
     if (data) setProfiles(data as Profile[])
   }
 

@@ -45,6 +45,14 @@ export default async function SessionPage({ params }: { params: Promise<{ id: st
     .eq("status", "waiting")
     .order("joined_at", { ascending: true })
 
+  // Record this user as a session participant (upsert to avoid duplicates)
+  await supabase
+    .from('session_participants')
+    .upsert(
+      { session_id: id, user_id: user.id },
+      { onConflict: 'session_id,user_id' }
+    )
+
   // Check if user is a manager: session creator or venue staff/owner
   let isManager = user.id === session.creator_id
 
