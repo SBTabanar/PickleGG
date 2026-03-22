@@ -3,7 +3,7 @@ import { Button } from '@/components/ui/button'
 import { ModeToggle } from '@/components/mode-toggle'
 import {
   Users, LayoutGrid, Trophy, Activity, ArrowRight, CircleDot, Zap, BarChart3,
-  Building2, Monitor, Shield, Calendar, Check, Clock
+  Building2, Monitor, Shield, Calendar
 } from 'lucide-react'
 
 const playerFeatures = [
@@ -73,58 +73,6 @@ const steps = [
   },
 ]
 
-const plans = [
-  {
-    name: "Free",
-    price: "$0",
-    period: "forever",
-    description: "Perfect for casual players and small groups.",
-    features: [
-      "Create & join sessions",
-      "Queue management",
-      "Live scoring & leaderboards",
-      "Spectator view",
-      "Challenge friends",
-    ],
-    cta: "Get Started",
-    href: "/login",
-    highlighted: false,
-  },
-  {
-    name: "Venue Pro",
-    price: "$39",
-    period: "/month",
-    description: "Everything you need to run a pickleball facility.",
-    features: [
-      "Everything in Free",
-      "Venue dashboard",
-      "Multi-staff management",
-      "Lobby TV display",
-      "Session scheduling & recurrence",
-      "Priority support",
-    ],
-    cta: "Start Free Trial",
-    href: "/login?plan=venue-pro",
-    highlighted: true,
-  },
-  {
-    name: "Enterprise",
-    price: "Custom",
-    period: "",
-    description: "For multi-location facilities and franchises.",
-    features: [
-      "Everything in Venue Pro",
-      "Multiple venues",
-      "Custom branding",
-      "API access",
-      "Dedicated support",
-      "Analytics & reports",
-    ],
-    cta: "Contact Us",
-    href: "mailto:hello@picklegg.com",
-    highlighted: false,
-  },
-]
 
 export default function HomePage() {
   return (
@@ -138,9 +86,6 @@ export default function HomePage() {
           <span className="text-base font-bold tracking-tight">PickleGG</span>
         </div>
         <nav aria-label="Main navigation" className="flex items-center gap-3">
-          <Link href="#pricing" className="hidden sm:inline text-sm text-muted-foreground hover:text-foreground transition-colors">
-            Pricing
-          </Link>
           <Link href="#venues" className="hidden sm:inline text-sm text-muted-foreground hover:text-foreground transition-colors">
             For Venues
           </Link>
@@ -270,8 +215,8 @@ export default function HomePage() {
           </div>
 
           <div className="mt-10 text-center">
-            <Button render={<Link href="/login?plan=venue-pro" />} size="lg" className="px-10 h-12 text-base">
-              Start Your Free Trial
+            <Button render={<Link href="/login" />} size="lg" className="px-10 h-12 text-base">
+              Get Started Free
               <ArrowRight className="ml-2 h-4 w-4" />
             </Button>
           </div>
@@ -307,62 +252,6 @@ export default function HomePage() {
       </section>
 
       {/* Pricing Section */}
-      <section id="pricing" className="px-6 py-20 md:py-28 border-t" aria-labelledby="pricing-heading">
-        <div className="max-w-5xl mx-auto">
-          <div className="text-center mb-14">
-            <p className="text-xs font-semibold tracking-widest text-primary-text uppercase mb-3">Pricing</p>
-            <h2 id="pricing-heading" className="text-3xl md:text-4xl font-bold tracking-tight">
-              Simple, Transparent Pricing
-            </h2>
-            <p className="text-muted-foreground mt-3 max-w-md mx-auto">
-              Free for players. Affordable plans for venues that want to level up.
-            </p>
-          </div>
-
-          <div className="grid gap-6 md:grid-cols-3">
-            {plans.map((plan) => (
-              <div
-                key={plan.name}
-                className={`relative rounded-2xl border p-6 md:p-8 flex flex-col ${
-                  plan.highlighted
-                    ? 'border-primary bg-primary/5 shadow-lg shadow-primary/10'
-                    : 'bg-card'
-                }`}
-              >
-                {plan.highlighted && (
-                  <div className="absolute -top-3 left-1/2 -translate-x-1/2 inline-flex items-center rounded-full bg-primary px-3 py-1 text-xs font-semibold text-primary-foreground">
-                    Most Popular
-                  </div>
-                )}
-                <div className="mb-6">
-                  <h3 className="text-lg font-bold mb-1">{plan.name}</h3>
-                  <div className="flex items-baseline gap-1">
-                    <span className="text-4xl font-bold tracking-tight">{plan.price}</span>
-                    {plan.period && <span className="text-sm text-muted-foreground">{plan.period}</span>}
-                  </div>
-                  <p className="text-sm text-muted-foreground mt-2">{plan.description}</p>
-                </div>
-                <ul className="space-y-3 mb-8 flex-1">
-                  {plan.features.map((feature) => (
-                    <li key={feature} className="flex items-center gap-2 text-sm">
-                      <Check className="h-4 w-4 text-primary shrink-0" />
-                      {feature}
-                    </li>
-                  ))}
-                </ul>
-                <Button
-                  render={<Link href={plan.href} />}
-                  variant={plan.highlighted ? "default" : "outline"}
-                  className="w-full h-11"
-                >
-                  {plan.cta}
-                </Button>
-              </div>
-            ))}
-          </div>
-        </div>
-      </section>
-
       {/* CTA Section */}
       <section className="px-6 py-20 md:py-28 border-t bg-muted/30" aria-labelledby="cta-heading">
         <div className="max-w-3xl mx-auto text-center">
@@ -380,8 +269,8 @@ export default function HomePage() {
                   Get Started Free
                   <ArrowRight className="ml-2 h-4 w-4" />
                 </Button>
-                <Button render={<Link href="#pricing" />} variant="outline" size="lg" className="px-10 h-12 text-base">
-                  View Pricing
+                <Button render={<Link href="#venues" />} variant="outline" size="lg" className="px-10 h-12 text-base">
+                  For Venue Owners
                 </Button>
               </div>
             </div>

@@ -2,7 +2,14 @@
   "permissions": {
     "allow": [
       "Bash(npx next:*)",
-      "Bash(npm run:*)"
+      "Bash(npm run:*)",
+      "WebFetch(domain:pilasports.com)",
+      "Bash(gh repo:*)",
+      "Bash(ipconfig)",
+      "Bash(npx vercel:*)",
+      "Bash(npm install:*)",
+      "Bash(cd:*)",
+      "Bash(npm uninstall:*)"
     ]
   }
 }
