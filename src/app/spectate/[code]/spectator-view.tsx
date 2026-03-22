@@ -4,7 +4,8 @@ import { useEffect, useState } from "react"
 import { createClient } from "@/utils/supabase/client"
 import { Session, Court, Game, Profile } from "@/types/database"
 import { CourtVisual } from "@/components/court-visual"
-import { Trophy, Users, Eye, Clock, LayoutGrid } from "lucide-react"
+import { PlayerAvatar } from "@/components/player-avatar"
+import { Trophy, Users, Eye, Clock, LayoutGrid, Swords } from "lucide-react"
 import { ModeToggle } from "@/components/mode-toggle"
 import { GameReactions } from "@/components/game-reactions"
 
@@ -144,6 +145,38 @@ export function SpectatorView({
             <span className="text-xs font-medium">{courts.filter(c => c.status === 'in_use').length} / {courts.length} courts active</span>
           </div>
         </div>
+
+        {/* Currently Playing */}
+        {games.length > 0 && (() => {
+          const playingPlayers = games.flatMap(g => [
+            ...g.team1_player_ids.map(pid => ({ pid, courtId: g.court_id })),
+            ...g.team2_player_ids.map(pid => ({ pid, courtId: g.court_id })),
+          ])
+          return (
+            <section>
+              <div className="flex items-center gap-2 mb-3">
+                <Swords className="h-4 w-4 text-muted-foreground" />
+                <h2 className="text-sm font-semibold uppercase tracking-wide text-muted-foreground">Currently Playing</h2>
+                <span className="text-xs text-muted-foreground ml-1">({playingPlayers.length} players)</span>
+              </div>
+              <div className="flex flex-wrap gap-2">
+                {playingPlayers.map(({ pid, courtId }, i) => {
+                  const court = courts.find(c => c.id === courtId)
+                  return (
+                    <div
+                      key={pid}
+                      className="inline-flex items-center gap-1.5 rounded-full border border-primary/30 bg-primary/5 px-3 py-1.5 text-xs font-medium"
+                    >
+                      <PlayerAvatar name={playerNames[pid] || `P${i+1}`} size="sm" index={i} className="h-5 w-5 text-[8px]" />
+                      <span className="max-w-[80px] truncate">{playerNames[pid] || `P${i+1}`}</span>
+                      {court && <span className="text-[10px] text-primary/60">{court.name}</span>}
+                    </div>
+                  )
+                })}
+              </div>
+            </section>
+          )
+        })()}
 
         {/* Courts */}
         <section>
