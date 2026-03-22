@@ -21,14 +21,17 @@ interface ShareSessionProps {
 export function ShareSession({ shareCode, sessionName }: ShareSessionProps) {
   const [copied, setCopied] = useState(false)
   const [copiedSpectate, setCopiedSpectate] = useState(false)
+  const [copiedTV, setCopiedTV] = useState(false)
   const [copyFailed, setCopyFailed] = useState(false)
   const [open, setOpen] = useState(false)
   const [shareUrl, setShareUrl] = useState(`/join/${shareCode}`)
   const [spectateUrl, setSpectateUrl] = useState(`/spectate/${shareCode}`)
+  const [tvUrl, setTvUrl] = useState(`/spectate/${shareCode}/tv`)
 
   useEffect(() => {
     setShareUrl(`${window.location.origin}/join/${shareCode}`)
     setSpectateUrl(`${window.location.origin}/spectate/${shareCode}`)
+    setTvUrl(`${window.location.origin}/spectate/${shareCode}/tv`)
   }, [shareCode])
 
   async function handleCopy() {
@@ -130,6 +133,42 @@ export function ShareSession({ shareCode, sessionName }: ShareSessionProps) {
                 className="shrink-0"
               >
                 {copiedSpectate ? (
+                  <>
+                    <Check className="h-3.5 w-3.5 mr-1.5" />
+                    Copied
+                  </>
+                ) : (
+                  <>
+                    <Copy className="h-3.5 w-3.5 mr-1.5" />
+                    Copy
+                  </>
+                )}
+              </Button>
+            </div>
+          </div>
+
+          <div className="space-y-2">
+            <label className="text-sm font-medium">Lobby TV Link</label>
+            <p className="text-xs text-muted-foreground">Full-screen display for wall-mounted screens.</p>
+            <div className="flex gap-2">
+              <Input
+                readOnly
+                value={tvUrl}
+                className="font-mono text-xs"
+              />
+              <Button
+                size="default"
+                variant={copiedTV ? "default" : "outline"}
+                onClick={async () => {
+                  try {
+                    await navigator.clipboard.writeText(tvUrl)
+                    setCopiedTV(true)
+                    setTimeout(() => setCopiedTV(false), 2000)
+                  } catch {}
+                }}
+                className="shrink-0"
+              >
+                {copiedTV ? (
                   <>
                     <Check className="h-3.5 w-3.5 mr-1.5" />
                     Copied

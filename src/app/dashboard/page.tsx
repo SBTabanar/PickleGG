@@ -3,12 +3,13 @@ import { redirect } from 'next/navigation'
 import Link from 'next/link'
 import { ModeToggle } from '@/components/mode-toggle'
 import { CreateSessionDialog } from '@/components/create-session-dialog'
+import { CreateVenueDialog } from '@/components/create-venue-dialog'
 import { JoinSessionInput } from '@/components/join-session-input'
 import { EditProfileDialog } from '@/components/edit-profile-dialog'
 import { FriendsDialog } from '@/components/friends-dialog'
-import { Session } from '@/types/database'
+import { Session, Venue } from '@/types/database'
 import { Button } from '@/components/ui/button'
-import { ChevronRight, Calendar, Trophy, Zap, LayoutGrid, LogOut, Users } from 'lucide-react'
+import { ChevronRight, Calendar, Trophy, Zap, LayoutGrid, LogOut, Users, Building2 } from 'lucide-react'
 import { logout } from '@/app/login/actions'
 
 function timeAgo(date: string) {
@@ -39,9 +40,29 @@ export default async function DashboardPage() {
     .eq("creator_id", user.id)
     .order("created_at", { ascending: false })
 
-  // NOTE: In production, replace `as Session[]` casts with Supabase's generated
-  // database types (via `supabase gen types typescript`) for end-to-end type safety.
   const typedSessions = sessions as Session[] | null
+
+  // Fetch venues the user is a member of
+  const { data: venueMembers } = await supabase
+    .from('venue_members')
+    .select('venue_id, role')
+    .eq('user_id', user.id)
+
+  let typedVenues: (Venue & { role: string })[] = []
+  if (venueMembers && venueMembers.length > 0) {
+    const venueIds = venueMembers.map(vm => vm.venue_id)
+    const { data: venues } = await supabase
+      .from('venues')
+      .select('*')
+      .in('id', venueIds)
+      .order('created_at', { ascending: false })
+
+    if (venues) {
+      const roleMap: Record<string, string> = {}
+      venueMembers.forEach(vm => { roleMap[vm.venue_id] = vm.role })
+      typedVenues = (venues as Venue[]).map(v => ({ ...v, role: roleMap[v.id] }))
+    }
+  }
 
   const activeSessions = typedSessions?.filter(s => s.status === 'active').length ?? 0
   const totalSessions = typedSessions?.length ?? 0
@@ -124,6 +145,56 @@ export default async function DashboardPage() {
               <CreateSessionDialog />
             </div>
           </div>
+        </div>
+
+        {/* Venues */}
+        <div>
+          <div className="flex items-center justify-between mb-4">
+            <h2 className="text-lg font-semibold tracking-tight">My Venues</h2>
+            <CreateVenueDialog />
+          </div>
+
+          {typedVenues.length === 0 ? (
+            <div className="flex flex-col items-center justify-center py-12 text-center border border-dashed rounded-2xl">
+              <div className="h-14 w-14 rounded-2xl bg-primary/10 flex items-center justify-center mb-4">
+                <Building2 className="h-6 w-6 text-primary" />
+              </div>
+              <p className="text-sm font-semibold mb-1">No venues yet</p>
+              <p className="text-xs text-muted-foreground mb-6 max-w-[240px]">
+                Create a venue to manage courts, staff, and recurring sessions for your facility.
+              </p>
+              <CreateVenueDialog />
+            </div>
+          ) : (
+            <div className="grid gap-2">
+              {typedVenues.map((venue, index) => (
+                <Link key={venue.id} href={`/dashboard/venue/${venue.id}`}>
+                  <div
+                    className="flex items-center justify-between px-5 py-4 rounded-xl border bg-card hover:bg-muted/40 hover:border-primary/20 transition-all duration-200 group animate-fade-in-up"
+                    style={{ animationDelay: `${index * 50}ms` }}
+                  >
+                    <div className="flex items-center gap-3.5">
+                      <div className="h-9 w-9 rounded-lg bg-primary/10 text-primary flex items-center justify-center shrink-0">
+                        <Building2 className="h-4 w-4" />
+                      </div>
+                      <div>
+                        <div className="flex items-center gap-2">
+                          <p className="text-sm font-medium">{venue.name}</p>
+                          <span className="inline-flex items-center rounded-full bg-muted px-2 py-0.5 text-[11px] font-medium text-muted-foreground capitalize">
+                            {venue.role}
+                          </span>
+                        </div>
+                        <p className="text-xs text-muted-foreground mt-0.5">
+                          {venue.num_courts} court{venue.num_courts !== 1 ? 's' : ''}
+                        </p>
+                      </div>
+                    </div>
+                    <ChevronRight className="h-4 w-4 text-muted-foreground group-hover:text-primary group-hover:translate-x-0.5 transition-all" />
+                  </div>
+                </Link>
+              ))}
+            </div>
+          )}
         </div>
 
         {/* Sessions List */}

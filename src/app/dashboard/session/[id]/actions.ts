@@ -9,15 +9,32 @@ async function verifyManager(sessionId: string) {
 
   const { data: session } = await supabase
     .from('sessions')
-    .select('creator_id')
+    .select('creator_id, venue_id')
     .eq('id', sessionId)
     .single()
 
-  if (!session || session.creator_id !== user.id) {
-    throw new Error('Not authorized — only the session manager can perform this action')
+  if (!session) throw new Error('Session not found')
+
+  // Session creator is always a manager
+  if (session.creator_id === user.id) {
+    return { supabase, userId: user.id }
   }
 
-  return { supabase, userId: user.id }
+  // For venue sessions, venue staff/owners are also managers
+  if (session.venue_id) {
+    const { data: member } = await supabase
+      .from('venue_members')
+      .select('role')
+      .eq('venue_id', session.venue_id)
+      .eq('user_id', user.id)
+      .single()
+
+    if (member) {
+      return { supabase, userId: user.id }
+    }
+  }
+
+  throw new Error('Not authorized — only the session manager can perform this action')
 }
 
 export async function startMatchAction(sessionId: string, courtId: string, playerIds: string[]) {

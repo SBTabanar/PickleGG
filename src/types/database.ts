@@ -8,13 +8,34 @@ export type Profile = {
   updated_at: string
 }
 
+export type Venue = {
+  id: string
+  name: string
+  slug: string
+  owner_id: string
+  num_courts: number
+  created_at: string
+}
+
+export type VenueMember = {
+  id: string
+  venue_id: string
+  user_id: string
+  role: 'owner' | 'staff'
+  created_at: string
+}
+
 export type Session = {
   id: string
   creator_id: string
+  venue_id: string | null
   name: string
   status: 'active' | 'completed'
   created_at: string
   share_code: string | null
+  scheduled_start: string | null
+  scheduled_end: string | null
+  recurrence: string | null
 }
 
 export type Court = {

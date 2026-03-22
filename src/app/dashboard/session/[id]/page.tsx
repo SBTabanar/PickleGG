@@ -45,7 +45,19 @@ export default async function SessionPage({ params }: { params: Promise<{ id: st
     .eq("status", "waiting")
     .order("joined_at", { ascending: true })
 
-  const isManager = user.id === session.creator_id
+  // Check if user is a manager: session creator or venue staff/owner
+  let isManager = user.id === session.creator_id
+
+  if (!isManager && session.venue_id) {
+    const { data: member } = await supabase
+      .from('venue_members')
+      .select('role')
+      .eq('venue_id', session.venue_id)
+      .eq('user_id', user.id)
+      .single()
+
+    if (member) isManager = true
+  }
 
   if (isManager) {
     return (
