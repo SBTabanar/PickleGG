@@ -258,7 +258,7 @@ export function PlayerDashboard({
     // Check queue position
     for (let i = 0; i < queue.length; i++) {
       if (queue[i].player_ids.includes(userId)) {
-        if (nextUpPlayers.length >= 4 && nextUpPlayers.includes(userId)) {
+        if (i === 0 && nextUpPlayers.length >= 4) {
           return { type: "next_up" }
         }
         return { type: "in_queue", position: i + 1, totalGroups: queue.length }
