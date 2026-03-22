@@ -56,13 +56,27 @@ export function EditGroupDialog({
   }, [open, currentPlayerIds])
 
   async function fetchProfiles() {
-    const { data } = await supabase.from("profiles").select("*").order("display_name")
+    // Only show players who have joined this session
+    const { data: participants } = await supabase
+      .from("session_participants")
+      .select("user_id")
+      .eq("session_id", sessionId)
+
+    const participantIds = participants?.map(p => p.user_id) || []
+    if (participantIds.length === 0) { setProfiles([]); return }
+
+    const { data } = await supabase
+      .from("profiles")
+      .select("*")
+      .in("id", participantIds)
+      .order("display_name")
     if (data) setProfiles(data as Profile[])
   }
 
   // Show players who are: currently in this group OR not in any queue entry
   const filteredProfiles = profiles.filter(p => {
-    if (!p.display_name?.toLowerCase().includes(search.toLowerCase())) return false
+    const name = p.display_name || p.id.slice(0, 8)
+    if (!name.toLowerCase().includes(search.toLowerCase())) return false
     // Always show players currently in this group
     if (currentPlayerIds.includes(p.id)) return true
     // Hide players in other queue entries

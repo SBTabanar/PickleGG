@@ -386,15 +386,17 @@ export async function joinQueueAction(sessionId: string, friendIds?: string[]) {
     }
   }
 
-  // Check if any player is already in the queue
-  const { data: existing } = await supabase
+  // Fetch all queue entries in one query to avoid race conditions
+  const { data: allEntries } = await supabase
     .from('queue_entries')
-    .select('id, player_ids')
+    .select('id, player_ids, status')
     .eq('session_id', sessionId)
     .in('status', ['waiting', 'playing'])
+    .order('joined_at', { ascending: true })
 
+  // Check if any player is already in the queue
   for (const pid of playerIds) {
-    if (existing?.some(e => e.player_ids.includes(pid))) {
+    if (allEntries?.some(e => e.player_ids.includes(pid))) {
       return { error: 'One or more players are already in the queue' }
     }
   }
@@ -412,26 +414,17 @@ export async function joinQueueAction(sessionId: string, friendIds?: string[]) {
     }
   }
 
-  // Try to fill into an existing group that has room (< 4 players)
-  const { data: waitingEntries } = await supabase
-    .from('queue_entries')
-    .select('id, player_ids')
-    .eq('session_id', sessionId)
-    .eq('status', 'waiting')
-    .order('joined_at', { ascending: true })
-
-  if (waitingEntries) {
-    for (const entry of waitingEntries) {
-      const spotsAvailable = 4 - entry.player_ids.length
-      if (spotsAvailable >= playerIds.length) {
-        // Add to this existing group
-        const { error } = await supabase
-          .from('queue_entries')
-          .update({ player_ids: [...entry.player_ids, ...playerIds] })
-          .eq('id', entry.id)
-        if (error) return { error: error.message }
-        return { success: true }
-      }
+  // Try to fill into an existing waiting group that has room (< 4 players)
+  const waitingEntries = allEntries?.filter(e => e.status === 'waiting') || []
+  for (const entry of waitingEntries) {
+    const spotsAvailable = 4 - entry.player_ids.length
+    if (spotsAvailable >= playerIds.length) {
+      const { error } = await supabase
+        .from('queue_entries')
+        .update({ player_ids: [...entry.player_ids, ...playerIds] })
+        .eq('id', entry.id)
+      if (error) return { error: error.message }
+      return { success: true }
     }
   }
 
