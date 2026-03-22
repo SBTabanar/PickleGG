@@ -69,10 +69,11 @@ export function JoinQueueDialog({ sessionId, onJoined }: JoinQueueDialogProps) {
     setAlreadyInQueue(Array.from(ids))
   }
 
-  const filteredProfiles = profiles.filter(p =>
-    p.display_name?.toLowerCase().includes(search.toLowerCase()) &&
-    !alreadyInQueue.includes(p.id)
-  )
+  const filteredProfiles = profiles.filter(p => {
+    const name = p.display_name || p.id.slice(0, 8)
+    return name.toLowerCase().includes(search.toLowerCase()) &&
+      !alreadyInQueue.includes(p.id)
+  })
 
   async function handleJoin() {
     if (selectedIds.length === 0) return
@@ -138,9 +139,9 @@ export function JoinQueueDialog({ sessionId, onJoined }: JoinQueueDialogProps) {
                 <div className="flex items-center gap-3">
                   <Avatar className="h-8 w-8">
                     <AvatarImage src={profile.avatar_url || ""} />
-                    <AvatarFallback>{profile.display_name?.[0]}</AvatarFallback>
+                    <AvatarFallback>{(profile.display_name || '?')[0]}</AvatarFallback>
                   </Avatar>
-                  <span className="font-medium">{profile.display_name}</span>
+                  <span className="font-medium">{profile.display_name || profile.id.slice(0, 8)}</span>
                 </div>
                 <Checkbox checked={selectedIds.includes(profile.id)} onCheckedChange={() => togglePlayer(profile.id)} />
               </label>
