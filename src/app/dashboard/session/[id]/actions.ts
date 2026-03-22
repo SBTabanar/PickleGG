@@ -74,7 +74,7 @@ export async function startMatchAction(sessionId: string, courtId: string, playe
     }
   }
 
-  return { success: true }
+  return { success: true, gameId: game.id }
 }
 
 export async function endGameAction(sessionId: string, gameId: string, courtId: string) {

@@ -1,6 +1,6 @@
 "use client"
 
-import { useEffect, useState } from "react"
+import { useEffect, useState, useRef } from "react"
 import { createClient } from "@/utils/supabase/client"
 import { Session, Court, QueueEntry } from "@/types/database"
 import { Button } from "@/components/ui/button"
@@ -21,7 +21,6 @@ import {
   X,
   Shield,
   Trash2,
-  Timer,
   Square,
   AlarmClock,
 } from "lucide-react"
@@ -63,9 +62,14 @@ const TIMER_OPTIONS = [
   { label: "20 min", minutes: 20 },
 ]
 
-function GameCountdown({ endsAt }: { endsAt: number }) {
+function GameCountdown({ endsAt, onExpired }: { endsAt: number; onExpired?: () => void }) {
   const [remaining, setRemaining] = useState("")
   const [expired, setExpired] = useState(false)
+  const expiredCalledRef = useRef(false)
+
+  useEffect(() => {
+    expiredCalledRef.current = false
+  }, [endsAt])
 
   useEffect(() => {
     function update() {
@@ -73,6 +77,10 @@ function GameCountdown({ endsAt }: { endsAt: number }) {
       if (diff <= 0) {
         setRemaining("0:00")
         setExpired(true)
+        if (!expiredCalledRef.current && onExpired) {
+          expiredCalledRef.current = true
+          onExpired()
+        }
         return
       }
       setExpired(false)
@@ -83,7 +91,7 @@ function GameCountdown({ endsAt }: { endsAt: number }) {
     update()
     const interval = setInterval(update, 1000)
     return () => clearInterval(interval)
-  }, [endsAt])
+  }, [endsAt, onExpired])
 
   return (
     <span className={`inline-flex items-center gap-1 text-xs font-semibold tabular-nums ${expired ? "text-destructive animate-pulse" : "text-primary"}`}>
@@ -226,9 +234,9 @@ export function ManagerDashboard({
   const [showHistory, setShowHistory] = useState(false)
   const [playerNames, setPlayerNames] = useState<Record<string, string>>({})
   const [gameTimers, setGameTimers] = useState<Record<string, number>>({})
-  const [showTimerPicker, setShowTimerPicker] = useState<string | null>(null)
   const [editingEntry, setEditingEntry] = useState<{ id: string; playerIds: string[] } | null>(null)
   const [restingEntries, setRestingEntries] = useState<QueueEntry[]>([])
+  const [startingCourt, setStartingCourt] = useState<string | null>(null)
 
   const sensors = useSensors(
     useSensor(PointerSensor, { activationConstraint: { distance: 5 } }),
@@ -315,22 +323,12 @@ export function ManagerDashboard({
     }
   }
 
-  function setTimerForGame(gameId: string, minutes: number) {
-    const game = games.find(g => g.id === gameId)
-    if (!game) return
-    const startTime = new Date(game.created_at).getTime()
-    const endsAt = startTime + minutes * 60 * 1000
-    setGameTimers(prev => ({ ...prev, [gameId]: endsAt }))
-    setShowTimerPicker(null)
-  }
-
   function clearTimerForGame(gameId: string) {
     setGameTimers(prev => {
       const next = { ...prev }
       delete next[gameId]
       return next
     })
-    setShowTimerPicker(null)
   }
 
   async function endGame(gameId: string, courtId: string) {
@@ -345,18 +343,33 @@ export function ManagerDashboard({
     setLoading(null)
   }
 
-  async function startMatch(courtId: string) {
+  async function startMatch(courtId: string, timerMinutes?: number) {
     if (nextUpPlayers.length < 4) {
       setActionError("Need at least 4 players in the queue to start a match.")
       return
     }
     setLoading(courtId)
     setActionError(null)
+    setStartingCourt(null)
     const result = await startMatchAction(session.id, courtId, nextUpPlayers.slice(0, 4))
     if (result.error) {
       setActionError(result.error)
+    } else if (timerMinutes && result.gameId) {
+      // Set timer based on creation time (now)
+      const endsAt = Date.now() + timerMinutes * 60 * 1000
+      setGameTimers(prev => ({ ...prev, [result.gameId!]: endsAt }))
     }
     setLoading(null)
+  }
+
+  async function autoEndGame(gameId: string, courtId: string) {
+    setActionError(null)
+    const result = await endGameAction(session.id, gameId, courtId)
+    if (result.error) {
+      setActionError(result.error)
+    } else {
+      clearTimerForGame(gameId)
+    }
   }
 
   async function removeFromQueue(entryIds: string[]) {
@@ -753,26 +766,68 @@ export function ManagerDashboard({
                             <p className="text-sm font-medium">Ready for play</p>
                             <p className="text-xs text-muted-foreground mt-0.5">
                               {nextUpPlayers.length >= 4
-                                ? 'Click "Start Match" to assign players'
+                                ? startingCourt === court.id
+                                  ? 'Set a match timer or start without one'
+                                  : 'Click "Start Match" to assign players'
                                 : 'Add more players to the queue first'
                               }
                             </p>
                           </div>
-                          <Button
-                            className="w-full mt-2"
-                            onClick={() => startMatch(court.id)}
-                            disabled={loading === court.id || nextUpPlayers.length < 4}
-                          >
-                            <Swords className="mr-2 h-4 w-4" />
-                            {loading === court.id ? "Starting..." : "Start Match"}
-                          </Button>
+
+                          {startingCourt === court.id ? (
+                            <div className="w-full space-y-2 mt-2 animate-fade-in">
+                              <p className="text-xs font-medium text-center text-muted-foreground">Match Timer</p>
+                              <div className="grid grid-cols-3 gap-2">
+                                {TIMER_OPTIONS.map(opt => (
+                                  <Button
+                                    key={opt.minutes}
+                                    variant="outline"
+                                    size="sm"
+                                    disabled={loading === court.id}
+                                    onClick={() => startMatch(court.id, opt.minutes)}
+                                  >
+                                    <AlarmClock className="mr-1 h-3 w-3" />
+                                    {opt.label}
+                                  </Button>
+                                ))}
+                              </div>
+                              <Button
+                                className="w-full"
+                                disabled={loading === court.id}
+                                onClick={() => startMatch(court.id)}
+                              >
+                                <Swords className="mr-2 h-4 w-4" />
+                                {loading === court.id ? "Starting..." : "No Timer"}
+                              </Button>
+                              <Button
+                                variant="ghost"
+                                size="sm"
+                                className="w-full text-muted-foreground"
+                                onClick={() => setStartingCourt(null)}
+                              >
+                                Cancel
+                              </Button>
+                            </div>
+                          ) : (
+                            <Button
+                              className="w-full mt-2"
+                              onClick={() => setStartingCourt(court.id)}
+                              disabled={loading === court.id || nextUpPlayers.length < 4}
+                            >
+                              <Swords className="mr-2 h-4 w-4" />
+                              Start Match
+                            </Button>
+                          )}
                         </div>
                       ) : (
                         <div className="space-y-4">
                           {/* Timer display */}
                           {activeGame && gameTimers[activeGame.id] && (
                             <div className="flex items-center justify-center">
-                              <GameCountdown endsAt={gameTimers[activeGame.id]} />
+                              <GameCountdown
+                                endsAt={gameTimers[activeGame.id]}
+                                onExpired={() => autoEndGame(activeGame.id, court.id)}
+                              />
                             </div>
                           )}
 
@@ -790,46 +845,6 @@ export function ManagerDashboard({
 
                           {activeGame && (
                             <div className="space-y-2">
-                              {/* Timer controls */}
-                              <div className="relative">
-                                <Button
-                                  variant="outline"
-                                  size="sm"
-                                  className="w-full"
-                                  onClick={() => setShowTimerPicker(showTimerPicker === activeGame.id ? null : activeGame.id)}
-                                >
-                                  <Timer className="mr-1.5 h-3.5 w-3.5" />
-                                  {gameTimers[activeGame.id] ? "Change Timer" : "Set Timer"}
-                                </Button>
-                                {showTimerPicker === activeGame.id && (
-                                  <div className="absolute top-full left-0 right-0 mt-1 z-20 rounded-lg border bg-popover p-2 shadow-md animate-fade-in">
-                                    <div className="grid grid-cols-3 gap-1.5">
-                                      {TIMER_OPTIONS.map(opt => (
-                                        <Button
-                                          key={opt.minutes}
-                                          variant="outline"
-                                          size="sm"
-                                          className="text-xs"
-                                          onClick={() => setTimerForGame(activeGame.id, opt.minutes)}
-                                        >
-                                          {opt.label}
-                                        </Button>
-                                      ))}
-                                    </div>
-                                    {gameTimers[activeGame.id] && (
-                                      <Button
-                                        variant="ghost"
-                                        size="sm"
-                                        className="w-full mt-1.5 text-xs text-muted-foreground"
-                                        onClick={() => clearTimerForGame(activeGame.id)}
-                                      >
-                                        Clear Timer
-                                      </Button>
-                                    )}
-                                  </div>
-                                )}
-                              </div>
-
                               {/* Action buttons */}
                               <div className="grid grid-cols-2 gap-2">
                                 <FinishMatchDialog
