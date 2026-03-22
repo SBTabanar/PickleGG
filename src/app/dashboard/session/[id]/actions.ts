@@ -462,12 +462,23 @@ export async function leaveQueueAction(sessionId: string) {
   const entry = entries?.find(e => e.player_ids.includes(user.id))
   if (!entry) return { error: 'Could not find your queue entry' }
 
-  const { error } = await supabase
-    .from('queue_entries')
-    .delete()
-    .eq('id', entry.id)
+  if (entry.player_ids.length === 1) {
+    // Solo entry — delete it
+    const { error } = await supabase
+      .from('queue_entries')
+      .delete()
+      .eq('id', entry.id)
+    if (error) return { error: error.message }
+  } else {
+    // Group entry — remove just this player, keep the rest
+    const remaining = entry.player_ids.filter((pid: string) => pid !== user.id)
+    const { error } = await supabase
+      .from('queue_entries')
+      .update({ player_ids: remaining })
+      .eq('id', entry.id)
+    if (error) return { error: error.message }
+  }
 
-  if (error) return { error: error.message }
   return { success: true }
 }
 
