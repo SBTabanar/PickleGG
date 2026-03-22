@@ -1,6 +1,6 @@
 "use client"
 
-import { useEffect, useState, useMemo } from "react"
+import { useEffect, useState, useMemo, useRef } from "react"
 import { createClient } from "@/utils/supabase/client"
 import { Session, Court, QueueEntry, Game, Profile } from "@/types/database"
 import { Button } from "@/components/ui/button"
@@ -19,11 +19,19 @@ import {
   Timer,
   LogIn,
   LogOut,
+  Coffee,
 } from "lucide-react"
-import { joinQueueAction, leaveQueueAction } from "./actions"
+import { joinQueueAction, leaveQueueAction, restPlayerAction, rejoinFromRestAction } from "./actions"
 import { EditProfileDialog } from "@/components/edit-profile-dialog"
 import { FriendsDialog } from "@/components/friends-dialog"
 import { QueueWithFriendsDialog } from "@/components/queue-with-friends-dialog"
+import { useNotifications } from "@/hooks/use-notifications"
+import { NotificationToggle } from "@/components/notification-toggle"
+import { GameReactions } from "@/components/game-reactions"
+import { ChallengeFriendDialog } from "@/components/challenge-friend-dialog"
+import { ChallengeNotification } from "@/components/challenge-notification"
+import { getSessionChallengesAction } from "./challenge-actions"
+import { Challenge } from "@/types/database"
 
 const supabase = createClient()
 
@@ -63,6 +71,7 @@ type PlayerStatus =
   | { type: "in_queue"; position: number; totalGroups: number }
   | { type: "next_up" }
   | { type: "playing"; court: Court; game: Game }
+  | { type: "resting" }
   | { type: "not_in_session" }
 
 export function PlayerDashboard({
@@ -77,15 +86,28 @@ export function PlayerDashboard({
   const [games, setGames] = useState<Game[]>([])
   const [completedGames, setCompletedGames] = useState<Game[]>([])
   const [playerNames, setPlayerNames] = useState<Record<string, string>>({})
+  const { permissionState, requestPermission, notify } = useNotifications()
+  const prevStatusRef = useRef<string | null>(null)
+  const [restingEntries, setRestingEntries] = useState<QueueEntry[]>([])
   const [joining, setJoining] = useState(false)
   const [leaving, setLeaving] = useState(false)
+  const [resting, setResting] = useState(false)
+  const [rejoining, setRejoining] = useState(false)
+  const [challenges, setChallenges] = useState<Challenge[]>([])
   const [actionError, setActionError] = useState<string | null>(null)
 
   useEffect(() => {
     fetchActiveGames()
     fetchCompletedGames()
     fetchProfiles()
+    fetchRestingEntries()
+    fetchChallenges()
   }, [])
+
+  async function fetchChallenges() {
+    const result = await getSessionChallengesAction(session.id)
+    if (result.challenges) setChallenges(result.challenges)
+  }
 
   async function fetchActiveGames() {
     const { data, error } = await supabase
@@ -126,6 +148,35 @@ export function PlayerDashboard({
     }
   }
 
+  async function fetchRestingEntries() {
+    const { data } = await supabase
+      .from("queue_entries")
+      .select("*")
+      .eq("session_id", session.id)
+      .eq("status", "resting")
+    if (data) setRestingEntries(data as QueueEntry[])
+  }
+
+  async function takeBreak() {
+    setResting(true)
+    setActionError(null)
+    const result = await restPlayerAction(session.id)
+    if (result.error) {
+      setActionError(result.error)
+    }
+    setResting(false)
+  }
+
+  async function rejoinQueue() {
+    setRejoining(true)
+    setActionError(null)
+    const result = await rejoinFromRestAction(session.id)
+    if (result.error) {
+      setActionError(result.error)
+    }
+    setRejoining(false)
+  }
+
   async function joinQueue() {
     setJoining(true)
     setActionError(null)
@@ -157,6 +208,13 @@ export function PlayerDashboard({
       .eq("status", "waiting")
       .order("joined_at", { ascending: true })
     if (data) setQueue(data as QueueEntry[])
+
+    const { data: restData } = await supabase
+      .from("queue_entries")
+      .select("*")
+      .eq("session_id", session.id)
+      .eq("status", "resting")
+    if (restData) setRestingEntries(restData as QueueEntry[])
   }
 
   // Realtime subscriptions
@@ -190,15 +248,30 @@ export function PlayerDashboard({
         if (payload.eventType === 'INSERT') {
           if (payload.new.status === 'waiting') {
             setQueue(prev => [...prev, payload.new as QueueEntry].sort((a, b) => new Date(a.joined_at).getTime() - new Date(b.joined_at).getTime()))
+          } else if (payload.new.status === 'resting') {
+            setRestingEntries(prev => [...prev, payload.new as QueueEntry])
           }
         } else if (payload.eventType === 'UPDATE') {
-          if (payload.new.status !== 'waiting') {
+          if (payload.new.status === 'resting') {
             setQueue(prev => prev.filter(q => q.id !== payload.new.id))
+            setRestingEntries(prev => {
+              const exists = prev.some(e => e.id === payload.new.id)
+              return exists ? prev.map(e => e.id === payload.new.id ? payload.new as QueueEntry : e) : [...prev, payload.new as QueueEntry]
+            })
+          } else if (payload.new.status === 'waiting') {
+            setRestingEntries(prev => prev.filter(e => e.id !== payload.new.id))
+            setQueue(prev => {
+              const exists = prev.some(q => q.id === payload.new.id)
+              const updated = exists ? prev.map(q => q.id === payload.new.id ? payload.new as QueueEntry : q) : [...prev, payload.new as QueueEntry]
+              return updated.sort((a, b) => new Date(a.joined_at).getTime() - new Date(b.joined_at).getTime())
+            })
           } else {
-            setQueue(prev => prev.map(q => q.id === payload.new.id ? payload.new as QueueEntry : q).sort((a, b) => new Date(a.joined_at).getTime() - new Date(b.joined_at).getTime()))
+            setQueue(prev => prev.filter(q => q.id !== payload.new.id))
+            setRestingEntries(prev => prev.filter(e => e.id !== payload.new.id))
           }
         } else if (payload.eventType === 'DELETE') {
           setQueue(prev => prev.filter(q => q.id !== payload.old.id))
+          setRestingEntries(prev => prev.filter(e => e.id !== payload.old.id))
         }
       })
       .subscribe()
@@ -228,9 +301,12 @@ export function PlayerDashboard({
 
     // Poll queue as fallback (realtime DELETE events need REPLICA IDENTITY FULL)
     const pollInterval = setInterval(refetchQueue, 5000)
+    // Poll challenges
+    const challengePoll = setInterval(fetchChallenges, 5000)
 
     return () => {
       clearInterval(pollInterval)
+      clearInterval(challengePoll)
       supabase.removeChannel(courtsChannel)
       supabase.removeChannel(queueChannel)
       supabase.removeChannel(gamesChannel)
@@ -257,6 +333,10 @@ export function PlayerDashboard({
         }
       }
     }
+    // Check if resting
+    if (restingEntries.some(e => e.player_ids.includes(userId))) {
+      return { type: "resting" }
+    }
     // Check queue position
     for (let i = 0; i < queue.length; i++) {
       if (queue[i].player_ids.includes(userId)) {
@@ -267,7 +347,24 @@ export function PlayerDashboard({
       }
     }
     return { type: "not_in_session" }
-  }, [games, queue, courts, userId, nextUpPlayers])
+  }, [games, queue, courts, userId, nextUpPlayers, restingEntries])
+
+  // Fire browser notifications on status transitions
+  useEffect(() => {
+    const prev = prevStatusRef.current
+    const curr = playerStatus.type
+    if (prev && prev !== curr) {
+      if (prev === "in_queue" && curr === "next_up") {
+        notify("You're Next!", "Get ready — you'll be called to a court soon")
+      } else if (curr === "playing") {
+        const courtName = playerStatus.type === "playing" ? playerStatus.court.name : ""
+        notify("Game Time!", `Head to ${courtName}`)
+      } else if (prev === "playing" && curr === "in_queue") {
+        notify("Back in Queue", `You're #${playerStatus.type === "in_queue" ? playerStatus.position : ""}`)
+      }
+    }
+    prevStatusRef.current = curr
+  }, [playerStatus, notify])
 
   const estimatedWaitMinutes = playerStatus.type === "in_queue"
     ? playerStatus.position * 10
@@ -290,6 +387,7 @@ export function PlayerDashboard({
           )}
         </div>
         <div className="flex items-center gap-1">
+          <NotificationToggle permissionState={permissionState} onRequest={requestPermission} />
           <ShareSession shareCode={session.share_code} sessionName={session.name} />
           <FriendsDialog />
           <EditProfileDialog />
@@ -308,6 +406,21 @@ export function PlayerDashboard({
           </div>
         )}
 
+        {/* Challenge Notifications */}
+        {challenges.length > 0 && (
+          <section className="space-y-2">
+            {challenges.map(challenge => (
+              <ChallengeNotification
+                key={challenge.id}
+                challenge={challenge}
+                currentUserId={userId}
+                playerNames={playerNames}
+                onResponded={fetchChallenges}
+              />
+            ))}
+          </section>
+        )}
+
         {/* Your Status Card */}
         <section className="animate-fade-in-up">
           {/* NOT IN QUEUE — big join button */}
@@ -320,7 +433,7 @@ export function PlayerDashboard({
                 <p className="text-lg font-semibold">Ready to play?</p>
                 <p className="text-sm text-muted-foreground mt-1">Jump into the rotation solo or with friends</p>
               </div>
-              <div className="grid grid-cols-2 gap-2">
+              <div className="grid grid-cols-3 gap-2">
                 <Button
                   className="h-12 text-base"
                   onClick={joinQueue}
@@ -333,6 +446,7 @@ export function PlayerDashboard({
                   sessionId={session.id}
                   onJoined={() => {}}
                 />
+                <ChallengeFriendDialog sessionId={session.id} />
               </div>
             </div>
           )}
@@ -351,15 +465,26 @@ export function PlayerDashboard({
                 <ListOrdered className="h-3 w-3" />
                 {playerStatus.totalGroups} group{playerStatus.totalGroups !== 1 ? "s" : ""} in queue
               </div>
-              <Button
-                variant="outline"
-                className="mt-4 h-11 px-6 text-muted-foreground"
-                onClick={leaveQueue}
-                disabled={leaving}
-              >
-                <LogOut className="mr-1.5 h-4 w-4" />
-                {leaving ? "Leaving..." : "Leave Queue"}
-              </Button>
+              <div className="mt-3 flex items-center justify-center gap-2">
+                <Button
+                  variant="outline"
+                  className="h-11 px-6 text-muted-foreground"
+                  onClick={leaveQueue}
+                  disabled={leaving}
+                >
+                  <LogOut className="mr-1.5 h-4 w-4" />
+                  {leaving ? "Leaving..." : "Leave Queue"}
+                </Button>
+                <Button
+                  variant="ghost"
+                  className="h-11 px-6 text-muted-foreground"
+                  onClick={takeBreak}
+                  disabled={resting}
+                >
+                  <Coffee className="mr-1.5 h-4 w-4" />
+                  {resting ? "..." : "Take a Break"}
+                </Button>
+              </div>
             </div>
           )}
 
@@ -371,14 +496,46 @@ export function PlayerDashboard({
               </div>
               <p className="text-2xl font-bold text-primary tracking-tight">YOU&apos;RE NEXT!</p>
               <p className="text-sm text-muted-foreground mt-2">Get ready — you&apos;ll be called to a court soon</p>
+              <div className="mt-4 flex items-center justify-center gap-2">
+                <Button
+                  variant="ghost"
+                  className="h-11 px-6 text-muted-foreground"
+                  onClick={leaveQueue}
+                  disabled={leaving}
+                >
+                  <LogOut className="mr-1.5 h-4 w-4" />
+                  {leaving ? "Leaving..." : "Leave Queue"}
+                </Button>
+                <Button
+                  variant="ghost"
+                  className="h-11 px-6 text-muted-foreground"
+                  onClick={takeBreak}
+                  disabled={resting}
+                >
+                  <Coffee className="mr-1.5 h-4 w-4" />
+                  {resting ? "..." : "Take a Break"}
+                </Button>
+              </div>
+            </div>
+          )}
+
+          {/* RESTING — break mode */}
+          {playerStatus.type === "resting" && (
+            <div className="rounded-2xl border-2 border-dashed border-amber-500/40 bg-amber-50 dark:bg-amber-950/20 p-8 text-center space-y-4">
+              <div className="h-16 w-16 rounded-full bg-amber-500/10 flex items-center justify-center mx-auto">
+                <Coffee className="h-8 w-8 text-amber-600 dark:text-amber-400" />
+              </div>
+              <div>
+                <p className="text-lg font-semibold">Taking a Break</p>
+                <p className="text-sm text-muted-foreground mt-1">You&apos;re sitting out. Jump back in when you&apos;re ready!</p>
+              </div>
               <Button
-                variant="ghost"
-                className="mt-4 h-11 px-6 text-muted-foreground"
-                onClick={leaveQueue}
-                disabled={leaving}
+                className="h-12 text-base"
+                onClick={rejoinQueue}
+                disabled={rejoining}
               >
-                <LogOut className="mr-1.5 h-4 w-4" />
-                {leaving ? "Leaving..." : "Leave Queue"}
+                <LogIn className="mr-2 h-5 w-5" />
+                {rejoining ? "Rejoining..." : "Rejoin Queue"}
               </Button>
             </div>
           )}
@@ -395,13 +552,16 @@ export function PlayerDashboard({
                   <MatchTimer startedAt={playerStatus.game.created_at} />
                 )}
               </div>
-              <CourtVisual
-                team1Players={playerStatus.game.team1_player_ids}
-                team2Players={playerStatus.game.team2_player_ids}
-                team1Score={playerStatus.game.team1_score}
-                team2Score={playerStatus.game.team2_score}
-                playerNames={playerNames}
-              />
+              <div className="relative">
+                <CourtVisual
+                  team1Players={playerStatus.game.team1_player_ids}
+                  team2Players={playerStatus.game.team2_player_ids}
+                  team1Score={playerStatus.game.team1_score}
+                  team2Score={playerStatus.game.team2_score}
+                  playerNames={playerNames}
+                />
+                <GameReactions sessionId={session.id} gameId={playerStatus.game.id} />
+              </div>
             </div>
           )}
         </section>

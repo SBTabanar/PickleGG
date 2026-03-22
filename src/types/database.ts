@@ -43,6 +43,18 @@ export type Friendship = {
   created_at: string
 }
 
+export type Challenge = {
+  id: string
+  session_id: string
+  challenger_id: string
+  challenger_partner_id: string | null
+  challenged_id: string
+  challenged_partner_id: string | null
+  status: 'pending' | 'accepted' | 'declined' | 'expired' | 'in_game' | 'completed'
+  game_id: string | null
+  created_at: string
+}
+
 export type Game = {
   id: string
   session_id: string

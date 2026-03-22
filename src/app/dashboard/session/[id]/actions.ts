@@ -278,6 +278,141 @@ export async function leaveQueueAction(sessionId: string) {
   return { success: true }
 }
 
+export async function restPlayerAction(sessionId: string) {
+  const supabase = await createClient()
+  const { data: { user } } = await supabase.auth.getUser()
+  if (!user) return { error: 'Not authenticated' }
+
+  // Find the user's waiting queue entry
+  const { data: entries } = await supabase
+    .from('queue_entries')
+    .select('id, player_ids')
+    .eq('session_id', sessionId)
+    .eq('status', 'waiting')
+
+  const entry = entries?.find(e => e.player_ids.includes(user.id))
+  if (!entry) return { error: 'You are not in the queue' }
+
+  // If group entry, remove user from it; create a separate resting entry for the user
+  if (entry.player_ids.length > 1) {
+    const remaining = entry.player_ids.filter((pid: string) => pid !== user.id)
+    await supabase.from('queue_entries').update({ player_ids: remaining }).eq('id', entry.id)
+    await supabase.from('queue_entries').insert({
+      session_id: sessionId,
+      player_ids: [user.id],
+      status: 'resting',
+      bucket_index: 0,
+    })
+  } else {
+    await supabase.from('queue_entries').update({ status: 'resting' }).eq('id', entry.id)
+  }
+
+  return { success: true }
+}
+
+export async function rejoinFromRestAction(sessionId: string) {
+  const supabase = await createClient()
+  const { data: { user } } = await supabase.auth.getUser()
+  if (!user) return { error: 'Not authenticated' }
+
+  const { data: entries } = await supabase
+    .from('queue_entries')
+    .select('id, player_ids')
+    .eq('session_id', sessionId)
+    .eq('status', 'resting')
+
+  const entry = entries?.find(e => e.player_ids.includes(user.id))
+  if (!entry) return { error: 'You are not resting' }
+
+  await supabase.from('queue_entries')
+    .update({ status: 'waiting', joined_at: new Date().toISOString() })
+    .eq('id', entry.id)
+
+  return { success: true }
+}
+
+export async function forceRequeueAction(sessionId: string, entryId: string) {
+  const { supabase } = await verifyManager(sessionId)
+
+  const { error } = await supabase.from('queue_entries')
+    .update({ status: 'waiting', joined_at: new Date().toISOString() })
+    .eq('id', entryId)
+
+  if (error) return { error: error.message }
+  return { success: true }
+}
+
+export async function rematchAction(
+  sessionId: string,
+  courtId: string,
+  team1PlayerIds: string[],
+  team2PlayerIds: string[]
+) {
+  const { supabase } = await verifyManager(sessionId)
+
+  const allPlayers = [...team1PlayerIds, ...team2PlayerIds]
+
+  // Create new game with same teams
+  const { data: game, error: gameError } = await supabase
+    .from('games')
+    .insert({
+      session_id: sessionId,
+      court_id: courtId,
+      team1_player_ids: team1PlayerIds,
+      team2_player_ids: team2PlayerIds,
+      status: 'in_progress',
+    })
+    .select()
+    .single()
+
+  if (gameError) return { error: gameError.message }
+
+  // Update court
+  const { error: courtError } = await supabase
+    .from('courts')
+    .update({ status: 'in_use', current_game_id: game.id })
+    .eq('id', courtId)
+
+  if (courtError) return { error: courtError.message }
+
+  // Remove any waiting queue entries for these players
+  const { data: entries } = await supabase
+    .from('queue_entries')
+    .select('id, player_ids')
+    .eq('session_id', sessionId)
+    .eq('status', 'waiting')
+
+  if (entries) {
+    for (const entry of entries) {
+      const matchedPlayers = entry.player_ids.filter((pid: string) => allPlayers.includes(pid))
+      if (matchedPlayers.length === 0) continue
+      if (matchedPlayers.length === entry.player_ids.length) {
+        await supabase.from('queue_entries').delete().eq('id', entry.id)
+      } else {
+        const remaining = entry.player_ids.filter((pid: string) => !allPlayers.includes(pid))
+        await supabase.from('queue_entries').update({ player_ids: remaining }).eq('id', entry.id)
+      }
+    }
+  }
+
+  return { success: true }
+}
+
+export async function shuffleRematchAction(
+  sessionId: string,
+  courtId: string,
+  playerIds: string[]
+) {
+  if (playerIds.length !== 4) return { error: 'Need exactly 4 players' }
+
+  // Shuffle and split into two teams
+  const shuffled = [...playerIds].sort(() => Math.random() - 0.5)
+  const team1 = [shuffled[0], shuffled[1]]
+  const team2 = [shuffled[2], shuffled[3]]
+
+  return rematchAction(sessionId, courtId, team1, team2)
+}
+
 export async function reorderQueueAction(sessionId: string, orderedEntryIds: string[]) {
   const { supabase } = await verifyManager(sessionId)
 

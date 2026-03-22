@@ -20,12 +20,15 @@ interface ShareSessionProps {
 
 export function ShareSession({ shareCode, sessionName }: ShareSessionProps) {
   const [copied, setCopied] = useState(false)
+  const [copiedSpectate, setCopiedSpectate] = useState(false)
   const [copyFailed, setCopyFailed] = useState(false)
   const [open, setOpen] = useState(false)
   const [shareUrl, setShareUrl] = useState(`/join/${shareCode}`)
+  const [spectateUrl, setSpectateUrl] = useState(`/spectate/${shareCode}`)
 
   useEffect(() => {
     setShareUrl(`${window.location.origin}/join/${shareCode}`)
+    setSpectateUrl(`${window.location.origin}/spectate/${shareCode}`)
   }, [shareCode])
 
   async function handleCopy() {
@@ -103,6 +106,42 @@ export function ShareSession({ shareCode, sessionName }: ShareSessionProps) {
                 Could not copy automatically. Please select the link above and copy it manually.
               </p>
             )}
+          </div>
+
+          <div className="space-y-2">
+            <label className="text-sm font-medium">Spectator Link</label>
+            <p className="text-xs text-muted-foreground">Anyone can watch live — no login required.</p>
+            <div className="flex gap-2">
+              <Input
+                readOnly
+                value={spectateUrl}
+                className="font-mono text-xs"
+              />
+              <Button
+                size="default"
+                variant={copiedSpectate ? "default" : "outline"}
+                onClick={async () => {
+                  try {
+                    await navigator.clipboard.writeText(spectateUrl)
+                    setCopiedSpectate(true)
+                    setTimeout(() => setCopiedSpectate(false), 2000)
+                  } catch {}
+                }}
+                className="shrink-0"
+              >
+                {copiedSpectate ? (
+                  <>
+                    <Check className="h-3.5 w-3.5 mr-1.5" />
+                    Copied
+                  </>
+                ) : (
+                  <>
+                    <Copy className="h-3.5 w-3.5 mr-1.5" />
+                    Copy
+                  </>
+                )}
+              </Button>
+            </div>
           </div>
         </div>
       </DialogContent>

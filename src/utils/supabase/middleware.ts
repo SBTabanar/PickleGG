@@ -33,8 +33,11 @@ export async function updateSession(request: NextRequest) {
 
   const pathname = request.nextUrl.pathname
 
+  // Public routes that don't require auth
+  const isPublic = pathname.startsWith('/spectate')
+
   // Protected routes — redirect unauthenticated users to login
-  const isProtected = pathname.startsWith('/dashboard') || pathname.startsWith('/join/')
+  const isProtected = !isPublic && (pathname.startsWith('/dashboard') || pathname.startsWith('/join/'))
 
   if (!user && isProtected) {
     const url = request.nextUrl.clone()

@@ -32,9 +32,10 @@ import { MatchHistory } from "@/components/match-history"
 import { CourtVisual } from "@/components/court-visual"
 import { PlayerAvatar } from "@/components/player-avatar"
 import { Game, Profile } from "@/types/database"
-import { startMatchAction, endGameAction, removeFromQueueAction, reorderQueueAction } from "./actions"
+import { startMatchAction, endGameAction, removeFromQueueAction, reorderQueueAction, forceRequeueAction } from "./actions"
 import { EditGroupDialog } from "@/components/edit-group-dialog"
-import { Pencil, UserCheck, GripVertical } from "lucide-react"
+import { GameReactions } from "@/components/game-reactions"
+import { Pencil, UserCheck, GripVertical, Coffee } from "lucide-react"
 import {
   DndContext,
   closestCenter,
@@ -227,6 +228,7 @@ export function ManagerDashboard({
   const [gameTimers, setGameTimers] = useState<Record<string, number>>({})
   const [showTimerPicker, setShowTimerPicker] = useState<string | null>(null)
   const [editingEntry, setEditingEntry] = useState<{ id: string; playerIds: string[] } | null>(null)
+  const [restingEntries, setRestingEntries] = useState<QueueEntry[]>([])
 
   const sensors = useSensors(
     useSensor(PointerSensor, { activationConstraint: { distance: 5 } }),
@@ -256,7 +258,23 @@ export function ManagerDashboard({
     fetchActiveGames()
     fetchCompletedGames()
     fetchProfiles()
+    fetchRestingEntries()
   }, [])
+
+  async function fetchRestingEntries() {
+    const { data } = await supabase
+      .from("queue_entries")
+      .select("*")
+      .eq("session_id", session.id)
+      .eq("status", "resting")
+    if (data) setRestingEntries(data as QueueEntry[])
+  }
+
+  async function handleForceRequeue(entryId: string) {
+    setActionError(null)
+    const result = await forceRequeueAction(session.id, entryId)
+    if (result.error) setActionError(result.error)
+  }
 
   async function fetchActiveGames() {
     const { data, error } = await supabase
@@ -389,15 +407,30 @@ export function ManagerDashboard({
         if (payload.eventType === 'INSERT') {
           if (payload.new.status === 'waiting') {
             setQueue(prev => [...prev, payload.new as QueueEntry].sort((a, b) => new Date(a.joined_at).getTime() - new Date(b.joined_at).getTime()))
+          } else if (payload.new.status === 'resting') {
+            setRestingEntries(prev => [...prev, payload.new as QueueEntry])
           }
         } else if (payload.eventType === 'UPDATE') {
-          if (payload.new.status !== 'waiting') {
+          if (payload.new.status === 'resting') {
             setQueue(prev => prev.filter(q => q.id !== payload.new.id))
+            setRestingEntries(prev => {
+              const exists = prev.some(e => e.id === payload.new.id)
+              return exists ? prev.map(e => e.id === payload.new.id ? payload.new as QueueEntry : e) : [...prev, payload.new as QueueEntry]
+            })
+          } else if (payload.new.status === 'waiting') {
+            setRestingEntries(prev => prev.filter(e => e.id !== payload.new.id))
+            setQueue(prev => {
+              const exists = prev.some(q => q.id === payload.new.id)
+              const updated = exists ? prev.map(q => q.id === payload.new.id ? payload.new as QueueEntry : q) : [...prev, payload.new as QueueEntry]
+              return updated.sort((a, b) => new Date(a.joined_at).getTime() - new Date(b.joined_at).getTime())
+            })
           } else {
-            setQueue(prev => prev.map(q => q.id === payload.new.id ? payload.new as QueueEntry : q).sort((a, b) => new Date(a.joined_at).getTime() - new Date(b.joined_at).getTime()))
+            setQueue(prev => prev.filter(q => q.id !== payload.new.id))
+            setRestingEntries(prev => prev.filter(e => e.id !== payload.new.id))
           }
         } else if (payload.eventType === 'DELETE') {
           setQueue(prev => prev.filter(q => q.id !== payload.old.id))
+          setRestingEntries(prev => prev.filter(e => e.id !== payload.old.id))
         }
       })
       .subscribe()
@@ -467,6 +500,13 @@ export function ManagerDashboard({
       .eq("status", "waiting")
       .order("joined_at", { ascending: true })
     if (data) setQueue(data as QueueEntry[])
+
+    const { data: restData } = await supabase
+      .from("queue_entries")
+      .select("*")
+      .eq("session_id", session.id)
+      .eq("status", "resting")
+    if (restData) setRestingEntries(restData as QueueEntry[])
   }
 
   return (
@@ -621,6 +661,38 @@ export function ManagerDashboard({
             </section>
           )}
 
+          {/* Resting Players */}
+          {restingEntries.length > 0 && (
+            <section>
+              <div className="flex items-center gap-2 mb-4">
+                <Coffee className="h-4 w-4 text-muted-foreground" />
+                <h2 className="text-sm font-semibold uppercase tracking-wide text-muted-foreground">Resting Players</h2>
+                <span className="text-xs text-muted-foreground ml-1">({restingEntries.reduce((sum, e) => sum + e.player_ids.length, 0)} resting)</span>
+              </div>
+              <div className="flex flex-wrap gap-2">
+                {restingEntries.map((entry) =>
+                  entry.player_ids.map((pid, i) => (
+                    <div
+                      key={pid}
+                      className="inline-flex items-center gap-1.5 rounded-full border border-amber-500/30 bg-amber-50 dark:bg-amber-950/20 px-3 py-1.5 text-xs font-medium"
+                    >
+                      <PlayerAvatar name={playerNames[pid] || `P${i+1}`} size="sm" index={i} className="h-5 w-5 text-[8px]" />
+                      <span className="max-w-[80px] truncate">{playerNames[pid] || `P${i+1}`}</span>
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        className="h-5 px-1.5 text-[10px] text-amber-600 dark:text-amber-400 hover:text-foreground"
+                        onClick={() => handleForceRequeue(entry.id)}
+                      >
+                        Requeue
+                      </Button>
+                    </div>
+                  ))
+                )}
+              </div>
+            </section>
+          )}
+
           {/* Edit Group Dialog */}
           {editingEntry && (
             <EditGroupDialog
@@ -704,14 +776,17 @@ export function ManagerDashboard({
                             </div>
                           )}
 
-                          <CourtVisual
-                            team1Players={activeGame?.team1_player_ids ?? []}
-                            team2Players={activeGame?.team2_player_ids ?? []}
-                            team1Score={activeGame?.team1_score ?? 0}
-                            team2Score={activeGame?.team2_score ?? 0}
-                            startedAt={activeGame?.created_at}
-                            playerNames={playerNames}
-                          />
+                          <div className="relative">
+                            <CourtVisual
+                              team1Players={activeGame?.team1_player_ids ?? []}
+                              team2Players={activeGame?.team2_player_ids ?? []}
+                              team1Score={activeGame?.team1_score ?? 0}
+                              team2Score={activeGame?.team2_score ?? 0}
+                              startedAt={activeGame?.created_at}
+                              playerNames={playerNames}
+                            />
+                            {activeGame && <GameReactions sessionId={session.id} gameId={activeGame.id} />}
+                          </div>
 
                           {activeGame && (
                             <div className="space-y-2">
@@ -763,6 +838,7 @@ export function ManagerDashboard({
                                   courtId={court.id}
                                   team1Players={activeGame.team1_player_ids}
                                   team2Players={activeGame.team2_player_ids}
+                                  playerNames={playerNames}
                                   onFinished={() => clearTimerForGame(activeGame.id)}
                                 />
                                 <Button

@@ -189,6 +189,9 @@
   .animate-glow {
     animation: courtGlow 3s ease-in-out infinite;
   }
+  .animate-reaction-float {
+    animation: reactionFloat 2.5s ease-out forwards;
+  }
   .hover-scale {
     transition: transform 0.15s ease-out;
   }
@@ -269,6 +272,20 @@
   to {
     opacity: 1;
     transform: translateY(0);
+  }
+}
+
+@keyframes reactionFloat {
+  0% {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+  70% {
+    opacity: 1;
+  }
+  100% {
+    opacity: 0;
+    transform: translateY(-120px) scale(1.2);
   }
 }
 
