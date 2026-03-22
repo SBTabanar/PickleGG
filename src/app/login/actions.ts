@@ -130,3 +130,39 @@ export async function logout() {
   revalidatePath('/', 'layout')
   redirect('/login')
 }
+
+export async function signInWithGoogle() {
+  const supabase = await createClient()
+  const { data, error } = await supabase.auth.signInWithOAuth({
+    provider: 'google',
+    options: {
+      redirectTo: `${process.env.NEXT_PUBLIC_SITE_URL}/auth/callback`,
+    },
+  })
+
+  if (error) {
+    redirect('/login?error=' + encodeURIComponent('Could not sign in with Google.'))
+  }
+
+  if (data.url) {
+    redirect(data.url)
+  }
+}
+
+export async function signInWithApple() {
+  const supabase = await createClient()
+  const { data, error } = await supabase.auth.signInWithOAuth({
+    provider: 'apple',
+    options: {
+      redirectTo: `${process.env.NEXT_PUBLIC_SITE_URL}/auth/callback`,
+    },
+  })
+
+  if (error) {
+    redirect('/login?error=' + encodeURIComponent('Could not sign in with Apple.'))
+  }
+
+  if (data.url) {
+    redirect(data.url)
+  }
+}
