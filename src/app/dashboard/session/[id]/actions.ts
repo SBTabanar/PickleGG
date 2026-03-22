@@ -245,3 +245,20 @@ export async function leaveQueueAction(sessionId: string) {
   if (error) return { error: error.message }
   return { success: true }
 }
+
+export async function reorderQueueAction(sessionId: string, orderedEntryIds: string[]) {
+  const { supabase } = await verifyManager(sessionId)
+
+  // Assign new joined_at timestamps in order, spaced 1 second apart
+  const baseTime = new Date('2000-01-01T00:00:00Z')
+  for (let i = 0; i < orderedEntryIds.length; i++) {
+    const newTime = new Date(baseTime.getTime() + i * 1000).toISOString()
+    const { error } = await supabase
+      .from('queue_entries')
+      .update({ joined_at: newTime })
+      .eq('id', orderedEntryIds[i])
+    if (error) return { error: error.message }
+  }
+
+  return { success: true }
+}

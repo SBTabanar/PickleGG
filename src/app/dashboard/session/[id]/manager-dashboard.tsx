@@ -32,9 +32,27 @@ import { MatchHistory } from "@/components/match-history"
 import { CourtVisual } from "@/components/court-visual"
 import { PlayerAvatar } from "@/components/player-avatar"
 import { Game, Profile } from "@/types/database"
-import { startMatchAction, endGameAction, removeFromQueueAction } from "./actions"
+import { startMatchAction, endGameAction, removeFromQueueAction, reorderQueueAction } from "./actions"
 import { EditGroupDialog } from "@/components/edit-group-dialog"
-import { Pencil, UserCheck } from "lucide-react"
+import { Pencil, UserCheck, GripVertical } from "lucide-react"
+import {
+  DndContext,
+  closestCenter,
+  KeyboardSensor,
+  PointerSensor,
+  TouchSensor,
+  useSensor,
+  useSensors,
+  type DragEndEvent,
+} from "@dnd-kit/core"
+import {
+  arrayMove,
+  SortableContext,
+  sortableKeyboardCoordinates,
+  useSortable,
+  verticalListSortingStrategy,
+} from "@dnd-kit/sortable"
+import { CSS } from "@dnd-kit/utilities"
 
 const supabase = createClient()
 
@@ -74,6 +92,116 @@ function GameCountdown({ endsAt }: { endsAt: number }) {
   )
 }
 
+interface SortableQueueItemProps {
+  entry: QueueEntry
+  index: number
+  nextUpPlayers: string[]
+  playerNames: Record<string, string>
+  onEdit: (entry: { id: string; playerIds: string[] }) => void
+  onRemove: (entryIds: string[]) => void
+}
+
+function SortableQueueItem({ entry, index, nextUpPlayers, playerNames, onEdit, onRemove }: SortableQueueItemProps) {
+  const {
+    attributes,
+    listeners,
+    setNodeRef,
+    transform,
+    transition,
+    isDragging,
+  } = useSortable({ id: entry.id })
+
+  const style = {
+    transform: CSS.Transform.toString(transform),
+    transition,
+    zIndex: isDragging ? 50 : undefined,
+    opacity: isDragging ? 0.8 : 1,
+  }
+
+  const isFirst = index === 0
+
+  return (
+    <div
+      ref={setNodeRef}
+      style={style}
+      className={`flex items-center justify-between px-4 py-3 rounded-xl border transition-all duration-200 ${
+        isDragging ? 'shadow-lg ring-2 ring-primary/30' : 'card-hover'
+      } ${
+        isFirst
+          ? 'border-primary/30 bg-primary/5 dark:bg-primary/10'
+          : 'bg-card hover:bg-muted/30'
+      }`}
+    >
+      <div className="flex items-center gap-2">
+        <button
+          className="cursor-grab active:cursor-grabbing touch-none text-muted-foreground hover:text-foreground p-1 -ml-1"
+          {...attributes}
+          {...listeners}
+          aria-label={`Drag to reorder group ${index + 1}`}
+        >
+          <GripVertical className="h-4 w-4" />
+        </button>
+        <div className={`h-8 w-8 rounded-lg flex items-center justify-center text-xs font-bold ${
+          isFirst
+            ? 'bg-primary text-primary-foreground'
+            : 'bg-muted text-muted-foreground'
+        }`}>
+          {index + 1}
+        </div>
+        <div>
+          <div className="flex items-center gap-2">
+            <p className="text-sm font-medium">
+              {isFirst ? 'Next Up' : `Group ${index + 1}`}
+            </p>
+            {isFirst && nextUpPlayers.length >= 4 && (
+              <span role="status" className="inline-flex items-center gap-1 rounded-full bg-primary/15 px-2 py-0.5 text-[11px] font-semibold text-primary">
+                <PlayCircle className="h-3 w-3" />
+                Ready
+              </span>
+            )}
+          </div>
+          <p className="text-xs text-muted-foreground">{entry.player_ids.length} player{entry.player_ids.length !== 1 ? "s" : ""}</p>
+        </div>
+      </div>
+      <div className="flex items-center gap-2">
+        <div className="flex items-center gap-1.5 flex-wrap justify-end">
+          {entry.player_ids.map((pid, i) => (
+            <div key={pid} className="flex items-center gap-1">
+              <PlayerAvatar
+                name={playerNames[pid] || `P${i + 1}`}
+                size="sm"
+                index={i}
+                className="border-2 border-background"
+              />
+              <span className="text-xs text-muted-foreground max-w-[70px] truncate hidden sm:inline">
+                {playerNames[pid] || `P${i + 1}`}
+              </span>
+            </div>
+          ))}
+        </div>
+        <Button
+          variant="ghost"
+          size="sm"
+          className="h-8 w-8 p-0 text-muted-foreground hover:text-foreground"
+          onClick={() => onEdit({ id: entry.id, playerIds: entry.player_ids })}
+          aria-label={`Edit group ${index + 1}`}
+        >
+          <Pencil className="h-3.5 w-3.5" />
+        </Button>
+        <Button
+          variant="ghost"
+          size="sm"
+          className="h-8 w-8 p-0 text-muted-foreground hover:text-destructive"
+          onClick={() => onRemove([entry.id])}
+          aria-label={`Remove group ${index + 1} from queue`}
+        >
+          <Trash2 className="h-3.5 w-3.5" />
+        </Button>
+      </div>
+    </div>
+  )
+}
+
 interface ManagerDashboardProps {
   initialSession: Session
   initialCourts: Court[]
@@ -99,6 +227,30 @@ export function ManagerDashboard({
   const [gameTimers, setGameTimers] = useState<Record<string, number>>({})
   const [showTimerPicker, setShowTimerPicker] = useState<string | null>(null)
   const [editingEntry, setEditingEntry] = useState<{ id: string; playerIds: string[] } | null>(null)
+
+  const sensors = useSensors(
+    useSensor(PointerSensor, { activationConstraint: { distance: 5 } }),
+    useSensor(TouchSensor, { activationConstraint: { delay: 200, tolerance: 5 } }),
+    useSensor(KeyboardSensor, { coordinateGetter: sortableKeyboardCoordinates }),
+  )
+
+  async function handleDragEnd(event: DragEndEvent) {
+    const { active, over } = event
+    if (!over || active.id === over.id) return
+
+    const oldIndex = queue.findIndex(q => q.id === active.id)
+    const newIndex = queue.findIndex(q => q.id === over.id)
+    if (oldIndex === -1 || newIndex === -1) return
+
+    const newQueue = arrayMove(queue, oldIndex, newIndex)
+    setQueue(newQueue) // optimistic update
+
+    const result = await reorderQueueAction(session.id, newQueue.map(q => q.id))
+    if (result.error) {
+      setActionError(result.error)
+      refetchQueue() // rollback on error
+    }
+  }
 
   useEffect(() => {
     fetchActiveGames()
@@ -445,81 +597,27 @@ export function ManagerDashboard({
                 <span className="text-xs text-muted-foreground ml-1">({totalPlayers} waiting)</span>
               </div>
 
-              <div className="grid gap-2">
-                {queue.map((entry, index) => {
-                  const isFirst = index === 0
-                  return (
-                    <div
-                      key={entry.id}
-                      className={`flex items-center justify-between px-4 py-3 rounded-xl border transition-all duration-200 animate-fade-in card-hover ${
-                        isFirst
-                          ? 'border-primary/30 bg-primary/5 dark:bg-primary/10'
-                          : 'bg-card hover:bg-muted/30'
-                      }`}
-                      style={{ animationDelay: `${index * 60}ms` }}
-                    >
-                      <div className="flex items-center gap-3">
-                        <div className={`h-8 w-8 rounded-lg flex items-center justify-center text-xs font-bold ${
-                          isFirst
-                            ? 'bg-primary text-primary-foreground'
-                            : 'bg-muted text-muted-foreground'
-                        }`}>
-                          {index + 1}
-                        </div>
-                        <div>
-                          <div className="flex items-center gap-2">
-                            <p className="text-sm font-medium">
-                              {isFirst ? 'Next Up' : `Group ${index + 1}`}
-                            </p>
-                            {isFirst && nextUpPlayers.length >= 4 && (
-                              <span role="status" className="inline-flex items-center gap-1 rounded-full bg-primary/15 px-2 py-0.5 text-[11px] font-semibold text-primary">
-                                <PlayCircle className="h-3 w-3" />
-                                Ready
-                              </span>
-                            )}
-                          </div>
-                          <p className="text-xs text-muted-foreground">{entry.player_ids.length} player{entry.player_ids.length !== 1 ? "s" : ""}</p>
-                        </div>
-                      </div>
-                      <div className="flex items-center gap-2">
-                        <div className="flex items-center gap-1.5 flex-wrap justify-end">
-                          {entry.player_ids.map((pid, i) => (
-                            <div key={pid} className="flex items-center gap-1">
-                              <PlayerAvatar
-                                name={playerNames[pid] || `P${i + 1}`}
-                                size="sm"
-                                index={i}
-                                className="border-2 border-background"
-                              />
-                              <span className="text-xs text-muted-foreground max-w-[70px] truncate hidden sm:inline">
-                                {playerNames[pid] || `P${i + 1}`}
-                              </span>
-                            </div>
-                          ))}
-                        </div>
-                        <Button
-                          variant="ghost"
-                          size="sm"
-                          className="h-8 w-8 p-0 text-muted-foreground hover:text-foreground"
-                          onClick={() => setEditingEntry({ id: entry.id, playerIds: entry.player_ids })}
-                          aria-label={`Edit group ${index + 1}`}
-                        >
-                          <Pencil className="h-3.5 w-3.5" />
-                        </Button>
-                        <Button
-                          variant="ghost"
-                          size="sm"
-                          className="h-8 w-8 p-0 text-muted-foreground hover:text-destructive"
-                          onClick={() => removeFromQueue([entry.id])}
-                          aria-label={`Remove group ${index + 1} from queue`}
-                        >
-                          <Trash2 className="h-3.5 w-3.5" />
-                        </Button>
-                      </div>
-                    </div>
-                  )
-                })}
-              </div>
+              <DndContext
+                sensors={sensors}
+                collisionDetection={closestCenter}
+                onDragEnd={handleDragEnd}
+              >
+                <SortableContext items={queue.map(q => q.id)} strategy={verticalListSortingStrategy}>
+                  <div className="grid gap-2">
+                    {queue.map((entry, index) => (
+                      <SortableQueueItem
+                        key={entry.id}
+                        entry={entry}
+                        index={index}
+                        nextUpPlayers={nextUpPlayers}
+                        playerNames={playerNames}
+                        onEdit={setEditingEntry}
+                        onRemove={removeFromQueue}
+                      />
+                    ))}
+                  </div>
+                </SortableContext>
+              </DndContext>
             </section>
           )}
 
