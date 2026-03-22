@@ -273,7 +273,11 @@ export function ManagerDashboard({
       })
       .subscribe()
 
+    // Poll queue as fallback (realtime DELETE events need REPLICA IDENTITY FULL)
+    const pollInterval = setInterval(refetchQueue, 5000)
+
     return () => {
+      clearInterval(pollInterval)
       supabase.removeChannel(courtsChannel)
       supabase.removeChannel(queueChannel)
       supabase.removeChannel(gamesChannel)
