@@ -31,10 +31,12 @@ import { MatchHistory } from "@/components/match-history"
 import { CourtVisual } from "@/components/court-visual"
 import { PlayerAvatar } from "@/components/player-avatar"
 import { Game, Profile } from "@/types/database"
-import { startMatchAction, endGameAction, removeFromQueueAction, reorderQueueAction, forceRequeueAction } from "./actions"
+import { startMatchAction, endGameAction, removeFromQueueAction, reorderQueueAction, forceRequeueAction, sendAnnouncementAction, getAnnouncementsAction, endSessionAction, getSessionSummaryAction } from "./actions"
 import { EditGroupDialog } from "@/components/edit-group-dialog"
 import { GameReactions } from "@/components/game-reactions"
-import { Pencil, UserCheck, GripVertical, Coffee } from "lucide-react"
+import { SessionAnnouncement } from "@/types/database"
+import { Pencil, UserCheck, GripVertical, Coffee, Megaphone, Power, Send, CheckCircle2, XCircle } from "lucide-react"
+import { useRouter } from "next/navigation"
 import {
   DndContext,
   closestCenter,
@@ -237,6 +239,17 @@ export function ManagerDashboard({
   const [editingEntry, setEditingEntry] = useState<{ id: string; playerIds: string[] } | null>(null)
   const [restingEntries, setRestingEntries] = useState<QueueEntry[]>([])
   const [startingCourt, setStartingCourt] = useState<string | null>(null)
+  const [announcements, setAnnouncements] = useState<SessionAnnouncement[]>([])
+  const [announcementText, setAnnouncementText] = useState("")
+  const [sendingAnnouncement, setSendingAnnouncement] = useState(false)
+  const [showEndSession, setShowEndSession] = useState(false)
+  const [sessionSummary, setSessionSummary] = useState<{
+    totalGames: number; uniquePlayers: number; avgGameDurationMin: number;
+    sessionDurationMin: number; topPlayers: { id: string; gamesPlayed: number; wins: number }[]
+  } | null>(null)
+  const [endingSession, setEndingSession] = useState(false)
+  const [requireCheckin, setRequireCheckin] = useState(false)
+  const router = useRouter()
 
   const sensors = useSensors(
     useSensor(PointerSensor, { activationConstraint: { distance: 5 } }),
@@ -267,7 +280,43 @@ export function ManagerDashboard({
     fetchCompletedGames()
     fetchProfiles()
     fetchRestingEntries()
+    fetchAnnouncements()
   }, [])
+
+  async function fetchAnnouncements() {
+    const result = await getAnnouncementsAction(session.id)
+    if (result.announcements) setAnnouncements(result.announcements)
+  }
+
+  async function handleSendAnnouncement() {
+    if (!announcementText.trim()) return
+    setSendingAnnouncement(true)
+    setActionError(null)
+    const result = await sendAnnouncementAction(session.id, announcementText)
+    if (result.error) {
+      setActionError(result.error)
+    } else {
+      setAnnouncementText("")
+      fetchAnnouncements()
+    }
+    setSendingAnnouncement(false)
+  }
+
+  async function handleEndSession() {
+    setEndingSession(true)
+    const summaryResult = await getSessionSummaryAction(session.id)
+    if (summaryResult.summary) {
+      setSessionSummary(summaryResult.summary)
+    }
+    const result = await endSessionAction(session.id)
+    if (result.error) {
+      setActionError(result.error)
+      setEndingSession(false)
+      setShowEndSession(false)
+    }
+    // Don't redirect yet — show summary first
+    setEndingSession(false)
+  }
 
   async function fetchRestingEntries() {
     const { data } = await supabase
@@ -351,7 +400,7 @@ export function ManagerDashboard({
     setLoading(courtId)
     setActionError(null)
     setStartingCourt(null)
-    const result = await startMatchAction(session.id, courtId, nextUpPlayers.slice(0, 4))
+    const result = await startMatchAction(session.id, courtId, nextUpPlayers.slice(0, 4), requireCheckin)
     if (result.error) {
       setActionError(result.error)
     } else if (timerMinutes && result.gameId) {
@@ -473,9 +522,11 @@ export function ManagerDashboard({
 
     // Poll queue as fallback (realtime DELETE events need REPLICA IDENTITY FULL)
     const pollInterval = setInterval(refetchQueue, 5000)
+    const announcementPoll = setInterval(fetchAnnouncements, 10000)
 
     return () => {
       clearInterval(pollInterval)
+      clearInterval(announcementPoll)
       supabase.removeChannel(courtsChannel)
       supabase.removeChannel(queueChannel)
       supabase.removeChannel(gamesChannel)
@@ -583,6 +634,14 @@ export function ManagerDashboard({
                   <BarChart3 className="mr-1.5 h-3.5 w-3.5" />
                   {showHistory ? 'Hide History' : 'Stats & History'}
                 </Button>
+                <Button
+                  variant="destructive"
+                  size="sm"
+                  onClick={() => setShowEndSession(true)}
+                >
+                  <Power className="mr-1.5 h-3.5 w-3.5" />
+                  End Session
+                </Button>
               </div>
             </div>
           </div>
@@ -600,6 +659,115 @@ export function ManagerDashboard({
               >
                 <X className="h-4 w-4" />
               </button>
+            </div>
+          )}
+
+          {/* End Session Confirmation / Summary */}
+          {showEndSession && (
+            <div className="rounded-2xl border-2 border-destructive/30 bg-card p-6 animate-fade-in">
+              {sessionSummary ? (
+                <div className="space-y-4">
+                  <div className="text-center">
+                    <CheckCircle2 className="h-10 w-10 text-primary mx-auto mb-2" />
+                    <h3 className="text-lg font-bold">Session Complete</h3>
+                    <p className="text-sm text-muted-foreground">Here&apos;s how it went:</p>
+                  </div>
+                  <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+                    <div className="rounded-xl border bg-muted/30 p-3 text-center">
+                      <p className="text-2xl font-bold tabular-nums">{sessionSummary.totalGames}</p>
+                      <p className="text-[11px] text-muted-foreground">Games Played</p>
+                    </div>
+                    <div className="rounded-xl border bg-muted/30 p-3 text-center">
+                      <p className="text-2xl font-bold tabular-nums">{sessionSummary.uniquePlayers}</p>
+                      <p className="text-[11px] text-muted-foreground">Players</p>
+                    </div>
+                    <div className="rounded-xl border bg-muted/30 p-3 text-center">
+                      <p className="text-2xl font-bold tabular-nums">{sessionSummary.avgGameDurationMin}m</p>
+                      <p className="text-[11px] text-muted-foreground">Avg Game</p>
+                    </div>
+                    <div className="rounded-xl border bg-muted/30 p-3 text-center">
+                      <p className="text-2xl font-bold tabular-nums">{Math.floor(sessionSummary.sessionDurationMin / 60)}h {sessionSummary.sessionDurationMin % 60}m</p>
+                      <p className="text-[11px] text-muted-foreground">Duration</p>
+                    </div>
+                  </div>
+                  {sessionSummary.topPlayers.length > 0 && (
+                    <div>
+                      <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground mb-2">Most Active Players</p>
+                      <div className="space-y-1.5">
+                        {sessionSummary.topPlayers.map((p, i) => (
+                          <div key={p.id} className="flex items-center justify-between px-3 py-2 rounded-lg bg-muted/30">
+                            <div className="flex items-center gap-2">
+                              <span className="text-xs font-bold text-muted-foreground w-5">#{i + 1}</span>
+                              <span className="text-sm font-medium">{playerNames[p.id] || p.id.slice(0, 8)}</span>
+                            </div>
+                            <div className="flex items-center gap-3 text-xs text-muted-foreground">
+                              <span>{p.gamesPlayed} games</span>
+                              <span className="text-primary font-medium">{p.wins}W</span>
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+                  <Button className="w-full" onClick={() => router.push('/dashboard')}>
+                    Back to Dashboard
+                  </Button>
+                </div>
+              ) : (
+                <div className="space-y-4">
+                  <div className="text-center">
+                    <Power className="h-10 w-10 text-destructive mx-auto mb-2" />
+                    <h3 className="text-lg font-bold">End this session?</h3>
+                    <p className="text-sm text-muted-foreground">All active games will be ended, queues cleared, and the session marked as completed.</p>
+                  </div>
+                  <div className="flex gap-2">
+                    <Button variant="outline" className="flex-1" onClick={() => setShowEndSession(false)} disabled={endingSession}>
+                      Cancel
+                    </Button>
+                    <Button variant="destructive" className="flex-1" onClick={handleEndSession} disabled={endingSession}>
+                      {endingSession ? "Ending..." : "End Session"}
+                    </Button>
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* Announcement Input */}
+          <div className="flex items-center gap-2">
+            <Megaphone className="h-4 w-4 text-muted-foreground shrink-0" />
+            <input
+              type="text"
+              placeholder="Send announcement to all players..."
+              className="flex-1 rounded-lg border bg-card px-3 py-2 text-sm placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
+              value={announcementText}
+              onChange={(e) => setAnnouncementText(e.target.value)}
+              maxLength={500}
+              onKeyDown={(e) => { if (e.key === 'Enter') handleSendAnnouncement() }}
+            />
+            <Button
+              size="sm"
+              onClick={handleSendAnnouncement}
+              disabled={sendingAnnouncement || !announcementText.trim()}
+            >
+              <Send className="h-3.5 w-3.5" />
+            </Button>
+          </div>
+
+          {/* Recent Announcements */}
+          {announcements.length > 0 && (
+            <div className="space-y-1.5">
+              {announcements.slice(0, 3).map((a) => (
+                <div key={a.id} className="flex items-start gap-2 rounded-lg border bg-amber-50 dark:bg-amber-950/20 border-amber-500/20 px-3 py-2">
+                  <Megaphone className="h-3.5 w-3.5 text-amber-600 dark:text-amber-400 mt-0.5 shrink-0" />
+                  <div className="flex-1 min-w-0">
+                    <p className="text-sm">{a.message}</p>
+                    <p className="text-[10px] text-muted-foreground mt-0.5">
+                      {playerNames[a.sender_id] || 'Manager'} &middot; {new Date(a.created_at).toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit" })}
+                    </p>
+                  </div>
+                </div>
+              ))}
             </div>
           )}
 
@@ -791,6 +959,15 @@ export function ManagerDashboard({
                                   </Button>
                                 ))}
                               </div>
+                              <label className="flex items-center gap-2 px-2 py-1.5 rounded-lg bg-muted/30 cursor-pointer">
+                                <input
+                                  type="checkbox"
+                                  checked={requireCheckin}
+                                  onChange={(e) => setRequireCheckin(e.target.checked)}
+                                  className="rounded border-input"
+                                />
+                                <span className="text-xs text-muted-foreground">Require player check-in</span>
+                              </label>
                               <Button
                                 className="w-full"
                                 disabled={loading === court.id}
@@ -828,6 +1005,34 @@ export function ManagerDashboard({
                                 endsAt={gameTimers[activeGame.id]}
                                 onExpired={() => autoEndGame(activeGame.id, court.id)}
                               />
+                            </div>
+                          )}
+
+                          {/* Check-in status */}
+                          {activeGame && activeGame.checked_in_player_ids != null && (
+                            <div className="rounded-lg border bg-muted/30 px-3 py-2">
+                              <p className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground mb-1.5">Player Check-in</p>
+                              <div className="flex flex-wrap gap-1.5">
+                                {[...activeGame.team1_player_ids, ...activeGame.team2_player_ids].map((pid) => {
+                                  const isCheckedIn = activeGame.checked_in_player_ids?.includes(pid)
+                                  return (
+                                    <span
+                                      key={pid}
+                                      className={`inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[11px] font-medium ${
+                                        isCheckedIn
+                                          ? 'bg-primary/10 text-primary border border-primary/20'
+                                          : 'bg-destructive/10 text-destructive border border-destructive/20 animate-pulse'
+                                      }`}
+                                    >
+                                      {isCheckedIn ? <CheckCircle2 className="h-3 w-3" /> : <XCircle className="h-3 w-3" />}
+                                      {playerNames[pid] || pid.slice(0, 6)}
+                                    </span>
+                                  )
+                                })}
+                              </div>
+                              {activeGame.checked_in_player_ids?.length === [...activeGame.team1_player_ids, ...activeGame.team2_player_ids].length && (
+                                <p className="text-[11px] text-primary font-medium mt-1.5">All players checked in!</p>
+                              )}
                             </div>
                           )}
 

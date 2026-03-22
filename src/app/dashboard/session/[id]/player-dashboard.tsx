@@ -9,6 +9,7 @@ import { ShareSession } from "@/components/share-session"
 import { CourtVisual } from "@/components/court-visual"
 import { PlayerAvatar } from "@/components/player-avatar"
 import Link from "next/link"
+import { SessionAnnouncement } from "@/types/database"
 import {
   ChevronLeft,
   Trophy,
@@ -20,8 +21,10 @@ import {
   LogIn,
   LogOut,
   Coffee,
+  Megaphone,
+  CheckCircle2,
 } from "lucide-react"
-import { joinQueueAction, leaveQueueAction, restPlayerAction, rejoinFromRestAction } from "./actions"
+import { joinQueueAction, leaveQueueAction, restPlayerAction, rejoinFromRestAction, getAnnouncementsAction, checkInAction } from "./actions"
 import { EditProfileDialog } from "@/components/edit-profile-dialog"
 import { FriendsDialog } from "@/components/friends-dialog"
 import { QueueWithFriendsDialog } from "@/components/queue-with-friends-dialog"
@@ -96,6 +99,8 @@ export function PlayerDashboard({
   const [rejoining, setRejoining] = useState(false)
   const [challenges, setChallenges] = useState<Challenge[]>([])
   const [actionError, setActionError] = useState<string | null>(null)
+  const [announcements, setAnnouncements] = useState<SessionAnnouncement[]>([])
+  const [checkingIn, setCheckingIn] = useState(false)
 
   useEffect(() => {
     fetchActiveGames()
@@ -103,7 +108,21 @@ export function PlayerDashboard({
     fetchProfiles()
     fetchRestingEntries()
     fetchChallenges()
+    fetchAnnouncements()
   }, [])
+
+  async function fetchAnnouncements() {
+    const result = await getAnnouncementsAction(session.id)
+    if (result.announcements) setAnnouncements(result.announcements)
+  }
+
+  async function handleCheckIn(gameId: string) {
+    setCheckingIn(true)
+    setActionError(null)
+    const result = await checkInAction(session.id, gameId)
+    if (result.error) setActionError(result.error)
+    setCheckingIn(false)
+  }
 
   async function fetchChallenges() {
     const result = await getSessionChallengesAction(session.id)
@@ -304,10 +323,12 @@ export function PlayerDashboard({
     const pollInterval = setInterval(refetchQueue, 5000)
     // Poll challenges
     const challengePoll = setInterval(fetchChallenges, 5000)
+    const announcementPoll = setInterval(fetchAnnouncements, 10000)
 
     return () => {
       clearInterval(pollInterval)
       clearInterval(challengePoll)
+      clearInterval(announcementPoll)
       supabase.removeChannel(courtsChannel)
       supabase.removeChannel(queueChannel)
       supabase.removeChannel(gamesChannel)
@@ -404,6 +425,21 @@ export function PlayerDashboard({
             <button onClick={() => setActionError(null)} className="text-destructive/40 hover:text-destructive">
               <span className="sr-only">Dismiss</span>&times;
             </button>
+          </div>
+        )}
+
+        {/* Announcements */}
+        {announcements.length > 0 && (
+          <div className="rounded-xl border border-amber-500/20 bg-amber-50 dark:bg-amber-950/20 px-4 py-3 animate-fade-in">
+            <div className="flex items-start gap-2">
+              <Megaphone className="h-4 w-4 text-amber-600 dark:text-amber-400 mt-0.5 shrink-0" />
+              <div className="flex-1 min-w-0">
+                <p className="text-sm font-medium">{announcements[0].message}</p>
+                <p className="text-[10px] text-muted-foreground mt-0.5">
+                  {new Date(announcements[0].created_at).toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit" })}
+                </p>
+              </div>
+            </div>
           </div>
         )}
 
@@ -553,6 +589,30 @@ export function PlayerDashboard({
                   <MatchTimer startedAt={playerStatus.game.created_at} />
                 )}
               </div>
+
+              {/* Check-in prompt */}
+              {playerStatus.game.checked_in_player_ids != null &&
+                !playerStatus.game.checked_in_player_ids.includes(userId) && (
+                <div className="mb-4 rounded-xl border-2 border-amber-500/40 bg-amber-50 dark:bg-amber-950/20 p-4 text-center">
+                  <p className="text-sm font-semibold mb-2">Confirm you&apos;re at the court</p>
+                  <Button
+                    onClick={() => handleCheckIn(playerStatus.game.id)}
+                    disabled={checkingIn}
+                    className="h-11"
+                  >
+                    <CheckCircle2 className="mr-2 h-4 w-4" />
+                    {checkingIn ? "Checking in..." : "I'm Here!"}
+                  </Button>
+                </div>
+              )}
+              {playerStatus.game.checked_in_player_ids != null &&
+                playerStatus.game.checked_in_player_ids.includes(userId) && (
+                <div className="mb-4 flex items-center justify-center gap-2 text-sm text-primary">
+                  <CheckCircle2 className="h-4 w-4" />
+                  <span className="font-medium">Checked in</span>
+                </div>
+              )}
+
               <div className="relative">
                 <CourtVisual
                   team1Players={playerStatus.game.team1_player_ids}

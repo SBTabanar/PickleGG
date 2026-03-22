@@ -32,7 +32,8 @@ import {
   Trash2,
   Clock,
 } from "lucide-react"
-import { createVenueSessionAction, inviteStaffAction, removeStaffAction } from "../actions"
+import { createVenueSessionAction, inviteStaffAction, removeStaffAction, saveTemplateAction, getTemplatesAction, deleteTemplateAction } from "../actions"
+import { SessionTemplate } from "@/types/database"
 import { searchPlayersAction } from "@/app/friends/actions"
 
 type MemberWithName = VenueMember & { displayName: string }
@@ -247,13 +248,45 @@ function CreateVenueSessionDialog({ venueId, numCourts }: { venueId: string; num
   const [recurrence, setRecurrence] = useState("")
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const [templates, setTemplates] = useState<SessionTemplate[]>([])
+  const [saveAsTemplate, setSaveAsTemplate] = useState(false)
+  const [templateName, setTemplateName] = useState("")
   const router = useRouter()
+
+  async function fetchTemplates() {
+    const result = await getTemplatesAction(venueId)
+    if (result.templates) setTemplates(result.templates as SessionTemplate[])
+  }
+
+  function loadTemplate(t: SessionTemplate) {
+    setName(t.name)
+    setCourts(String(t.num_courts))
+    setScheduledStart(t.scheduled_start || "")
+    setScheduledEnd(t.scheduled_end || "")
+    setRecurrence(t.recurrence || "")
+  }
+
+  async function handleDeleteTemplate(templateId: string) {
+    await deleteTemplateAction(venueId, templateId)
+    fetchTemplates()
+  }
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault()
     if (!name.trim()) { setError("Session name is required"); return }
     setLoading(true)
     setError(null)
+
+    if (saveAsTemplate && templateName.trim()) {
+      await saveTemplateAction(
+        venueId,
+        templateName.trim(),
+        parseInt(courts) || numCourts,
+        scheduledStart || undefined,
+        scheduledEnd || undefined,
+        recurrence || undefined,
+      )
+    }
 
     const today = new Date().toISOString().split('T')[0]
     const startTime = scheduledStart
@@ -284,7 +317,11 @@ function CreateVenueSessionDialog({ venueId, numCourts }: { venueId: string; num
   return (
     <Dialog open={open} onOpenChange={(isOpen) => {
       setOpen(isOpen)
-      if (isOpen) { setName(""); setCourts(String(numCourts)); setScheduledStart(""); setScheduledEnd(""); setRecurrence(""); setError(null) }
+      if (isOpen) {
+        setName(""); setCourts(String(numCourts)); setScheduledStart(""); setScheduledEnd("")
+        setRecurrence(""); setError(null); setSaveAsTemplate(false); setTemplateName("")
+        fetchTemplates()
+      }
     }}>
       <DialogTrigger render={
         <Button size="sm">
@@ -303,6 +340,35 @@ function CreateVenueSessionDialog({ venueId, numCourts }: { venueId: string; num
               <p className="text-sm text-destructive">{error}</p>
             </div>
           )}
+
+          {/* Templates */}
+          {templates.length > 0 && (
+            <div className="py-3">
+              <Label className="text-xs text-muted-foreground mb-2 block">Load from Template</Label>
+              <div className="flex flex-wrap gap-1.5">
+                {templates.map((t) => (
+                  <div key={t.id} className="inline-flex items-center gap-1 rounded-full border bg-card px-2.5 py-1 text-xs">
+                    <button
+                      type="button"
+                      onClick={() => loadTemplate(t)}
+                      className="font-medium hover:text-primary transition-colors"
+                    >
+                      {t.name}
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => handleDeleteTemplate(t.id)}
+                      className="text-muted-foreground hover:text-destructive transition-colors ml-0.5"
+                      title="Delete template"
+                    >
+                      <Trash2 className="h-3 w-3" />
+                    </button>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
           <div className="grid gap-4 py-4">
             <div className="grid gap-2">
               <Label htmlFor="session-name">Session Name</Label>
@@ -337,6 +403,27 @@ function CreateVenueSessionDialog({ venueId, numCourts }: { venueId: string; num
                 <option value="weekends">Weekends (Sat-Sun)</option>
               </select>
               <p className="text-xs text-muted-foreground">Recurring sessions are auto-created on schedule.</p>
+            </div>
+
+            {/* Save as Template */}
+            <div className="rounded-lg border bg-muted/30 p-3 space-y-2">
+              <label className="flex items-center gap-2 cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={saveAsTemplate}
+                  onChange={(e) => setSaveAsTemplate(e.target.checked)}
+                  className="rounded border-input"
+                />
+                <span className="text-xs font-medium">Save as template for next time</span>
+              </label>
+              {saveAsTemplate && (
+                <Input
+                  placeholder="Template name (e.g. Friday Night)"
+                  value={templateName}
+                  onChange={(e) => setTemplateName(e.target.value)}
+                  className="h-8 text-xs"
+                />
+              )}
             </div>
           </div>
           <DialogFooter>

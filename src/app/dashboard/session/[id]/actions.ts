@@ -37,7 +37,7 @@ async function verifyManager(sessionId: string) {
   throw new Error('Not authorized — only the session manager can perform this action')
 }
 
-export async function startMatchAction(sessionId: string, courtId: string, playerIds: string[]) {
+export async function startMatchAction(sessionId: string, courtId: string, playerIds: string[], requireCheckin?: boolean) {
   const { supabase } = await verifyManager(sessionId)
 
   if (playerIds.length !== 4) {
@@ -55,6 +55,7 @@ export async function startMatchAction(sessionId: string, courtId: string, playe
       team1_player_ids: team1,
       team2_player_ids: team2,
       status: 'in_progress',
+      ...(requireCheckin ? { checked_in_player_ids: [] } : {}),
     })
     .select()
     .single()
@@ -144,6 +145,153 @@ export async function endGameAction(sessionId: string, gameId: string, courtId: 
     bucket_index: 0,
   })
 
+  return { success: true }
+}
+
+export async function sendAnnouncementAction(sessionId: string, message: string) {
+  const { supabase, userId } = await verifyManager(sessionId)
+  const trimmed = message.trim()
+  if (!trimmed) return { error: 'Message is required' }
+  if (trimmed.length > 500) return { error: 'Message too long (max 500 characters)' }
+
+  const { error } = await supabase.from('session_announcements').insert({
+    session_id: sessionId,
+    sender_id: userId,
+    message: trimmed,
+  })
+  if (error) return { error: error.message }
+  return { success: true }
+}
+
+export async function getAnnouncementsAction(sessionId: string) {
+  const supabase = await createClient()
+  const { data } = await supabase
+    .from('session_announcements')
+    .select('*')
+    .eq('session_id', sessionId)
+    .order('created_at', { ascending: false })
+    .limit(10)
+  return { announcements: data || [] }
+}
+
+export async function endSessionAction(sessionId: string) {
+  const { supabase } = await verifyManager(sessionId)
+
+  await supabase
+    .from('games')
+    .update({ status: 'completed', completed_at: new Date().toISOString() })
+    .eq('session_id', sessionId)
+    .eq('status', 'in_progress')
+
+  await supabase
+    .from('courts')
+    .update({ status: 'open', current_game_id: null })
+    .eq('session_id', sessionId)
+
+  await supabase.from('queue_entries').delete().eq('session_id', sessionId)
+
+  const { error } = await supabase
+    .from('sessions')
+    .update({ status: 'completed' })
+    .eq('id', sessionId)
+  if (error) return { error: error.message }
+  return { success: true }
+}
+
+export async function getSessionSummaryAction(sessionId: string) {
+  const { supabase } = await verifyManager(sessionId)
+
+  const { data: games } = await supabase
+    .from('games')
+    .select('*')
+    .eq('session_id', sessionId)
+    .eq('status', 'completed')
+
+  const { data: session } = await supabase
+    .from('sessions')
+    .select('*')
+    .eq('id', sessionId)
+    .single()
+
+  if (!session) return { error: 'Session not found' }
+
+  const allGames = games || []
+  const totalGames = allGames.length
+  const allPlayerIds = new Set<string>()
+  const playerGamesCount: Record<string, number> = {}
+  const playerWins: Record<string, number> = {}
+  let totalDurationSec = 0
+  let gamesWithDuration = 0
+
+  for (const game of allGames) {
+    const players = [...game.team1_player_ids, ...game.team2_player_ids]
+    for (const pid of players) {
+      allPlayerIds.add(pid)
+      playerGamesCount[pid] = (playerGamesCount[pid] || 0) + 1
+      const isWin =
+        (game.team1_player_ids.includes(pid) && game.winner_team === 1) ||
+        (game.team2_player_ids.includes(pid) && game.winner_team === 2)
+      if (isWin) playerWins[pid] = (playerWins[pid] || 0) + 1
+    }
+
+    if (game.completed_at && game.created_at) {
+      const dur = (new Date(game.completed_at).getTime() - new Date(game.created_at).getTime()) / 1000
+      if (dur > 0 && dur < 7200) {
+        totalDurationSec += dur
+        gamesWithDuration++
+      }
+    }
+  }
+
+  const avgDurationMin = gamesWithDuration > 0
+    ? Math.round(totalDurationSec / gamesWithDuration / 60) : 0
+
+  const topPlayers = Object.entries(playerGamesCount)
+    .sort(([, a], [, b]) => b - a)
+    .slice(0, 5)
+    .map(([id, gamesPlayed]) => ({ id, gamesPlayed, wins: playerWins[id] || 0 }))
+
+  const sessionDurationMin = session.created_at
+    ? Math.round((Date.now() - new Date(session.created_at).getTime()) / 60000)
+    : 0
+
+  return {
+    summary: {
+      totalGames,
+      uniquePlayers: allPlayerIds.size,
+      avgGameDurationMin: avgDurationMin,
+      sessionDurationMin,
+      topPlayers,
+    },
+  }
+}
+
+export async function checkInAction(sessionId: string, gameId: string) {
+  const supabase = await createClient()
+  const { data: { user } } = await supabase.auth.getUser()
+  if (!user) return { error: 'Not authenticated' }
+
+  const { data: game } = await supabase
+    .from('games')
+    .select('team1_player_ids, team2_player_ids, checked_in_player_ids, session_id')
+    .eq('id', gameId)
+    .single()
+
+  if (!game) return { error: 'Game not found' }
+  if (game.session_id !== sessionId) return { error: 'Game does not belong to this session' }
+
+  const allPlayers = [...game.team1_player_ids, ...game.team2_player_ids]
+  if (!allPlayers.includes(user.id)) return { error: 'You are not in this game' }
+
+  const checkedIn = game.checked_in_player_ids || []
+  if (checkedIn.includes(user.id)) return { error: 'Already checked in' }
+
+  const { error } = await supabase
+    .from('games')
+    .update({ checked_in_player_ids: [...checkedIn, user.id] })
+    .eq('id', gameId)
+
+  if (error) return { error: error.message }
   return { success: true }
 }
 

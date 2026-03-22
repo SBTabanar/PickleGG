@@ -76,6 +76,26 @@ export type Challenge = {
   created_at: string
 }
 
+export type SessionTemplate = {
+  id: string
+  venue_id: string
+  created_by: string
+  name: string
+  num_courts: number
+  scheduled_start: string | null
+  scheduled_end: string | null
+  recurrence: string | null
+  created_at: string
+}
+
+export type SessionAnnouncement = {
+  id: string
+  session_id: string
+  sender_id: string
+  message: string
+  created_at: string
+}
+
 export type Game = {
   id: string
   session_id: string
@@ -89,4 +109,5 @@ export type Game = {
   created_at: string
   completed_at: string | null
   scored_by: string | null
+  checked_in_player_ids: string[] | null
 }

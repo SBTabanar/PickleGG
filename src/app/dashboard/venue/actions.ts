@@ -216,3 +216,70 @@ export async function createVenueSessionAction(
 
   return { success: true, session }
 }
+
+export async function saveTemplateAction(
+  venueId: string,
+  templateName: string,
+  numCourts: number,
+  scheduledStart?: string,
+  scheduledEnd?: string,
+  recurrence?: string
+) {
+  const { supabase, user } = await getUser()
+  const { data: member } = await supabase
+    .from('venue_members')
+    .select('role')
+    .eq('venue_id', venueId)
+    .eq('user_id', user.id)
+    .single()
+  if (!member) return { error: 'Not a member of this venue' }
+
+  const { error } = await supabase.from('session_templates').insert({
+    venue_id: venueId,
+    created_by: user.id,
+    name: templateName.trim(),
+    num_courts: numCourts,
+    scheduled_start: scheduledStart || null,
+    scheduled_end: scheduledEnd || null,
+    recurrence: recurrence || null,
+  })
+  if (error) return { error: error.message }
+  return { success: true }
+}
+
+export async function getTemplatesAction(venueId: string) {
+  const { supabase, user } = await getUser()
+  const { data: member } = await supabase
+    .from('venue_members')
+    .select('role')
+    .eq('venue_id', venueId)
+    .eq('user_id', user.id)
+    .single()
+  if (!member) return { error: 'Not a member' }
+
+  const { data } = await supabase
+    .from('session_templates')
+    .select('*')
+    .eq('venue_id', venueId)
+    .order('created_at', { ascending: false })
+  return { templates: data || [] }
+}
+
+export async function deleteTemplateAction(venueId: string, templateId: string) {
+  const { supabase, user } = await getUser()
+  const { data: member } = await supabase
+    .from('venue_members')
+    .select('role')
+    .eq('venue_id', venueId)
+    .eq('user_id', user.id)
+    .single()
+  if (!member) return { error: 'Not a member' }
+
+  const { error } = await supabase
+    .from('session_templates')
+    .delete()
+    .eq('id', templateId)
+    .eq('venue_id', venueId)
+  if (error) return { error: error.message }
+  return { success: true }
+}
