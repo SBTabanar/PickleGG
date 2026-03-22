@@ -35,6 +35,9 @@ export async function updateSession(request: NextRequest) {
 
   // Public routes that don't require auth
   const isPublic = pathname.startsWith('/spectate')
+    || pathname.startsWith('/terms')
+    || pathname.startsWith('/privacy')
+    || pathname.startsWith('/api/')
 
   // Protected routes — redirect unauthenticated users to login
   const isProtected = !isPublic && (pathname.startsWith('/dashboard') || pathname.startsWith('/join/'))

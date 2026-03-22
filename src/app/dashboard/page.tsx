@@ -4,6 +4,7 @@ import Link from 'next/link'
 import { ModeToggle } from '@/components/mode-toggle'
 import { CreateSessionDialog } from '@/components/create-session-dialog'
 import { CreateVenueDialog } from '@/components/create-venue-dialog'
+import { VenueOnboarding } from '@/components/venue-onboarding'
 import { JoinSessionInput } from '@/components/join-session-input'
 import { EditProfileDialog } from '@/components/edit-profile-dialog'
 import { FriendsDialog } from '@/components/friends-dialog'
@@ -109,6 +110,9 @@ export default async function DashboardPage() {
             <p className="text-sm text-muted-foreground">Ready to play? Create or join a session below.</p>
           </div>
         </div>
+
+        {/* Venue Onboarding — show when user has no venues */}
+        {typedVenues.length === 0 && <VenueOnboarding />}
 
         {/* Join a Session */}
         <div className="rounded-2xl border bg-card p-5">

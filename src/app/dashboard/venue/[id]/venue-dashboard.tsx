@@ -31,6 +31,8 @@ import {
   UserPlus,
   Trash2,
   Clock,
+  CreditCard,
+  Sparkles,
 } from "lucide-react"
 import { createVenueSessionAction, inviteStaffAction, removeStaffAction } from "../actions"
 import { searchPlayersAction } from "@/app/friends/actions"
@@ -83,6 +85,11 @@ export function VenueDashboard({ venue, sessions, members, currentUserRole, user
       </header>
 
       <main className="flex flex-1 flex-col gap-6 p-6 md:p-10 max-w-4xl mx-auto w-full">
+        {/* Subscription Banner */}
+        {isOwner && (!venue.subscription_status || venue.subscription_status === 'canceled') && (
+          <SubscriptionBanner venueId={venue.id} />
+        )}
+
         {/* Stats */}
         <div className="grid grid-cols-3 gap-3">
           <div className="rounded-xl border bg-card px-4 py-3.5">
@@ -438,5 +445,48 @@ function RemoveStaffButton({ venueId, memberId }: { venueId: string; memberId: s
     >
       <Trash2 className="h-3 w-3" />
     </button>
+  )
+}
+
+function SubscriptionBanner({ venueId }: { venueId: string }) {
+  const [loading, setLoading] = useState(false)
+
+  async function handleSubscribe() {
+    setLoading(true)
+    try {
+      const res = await fetch('/api/stripe/checkout', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ venueId, planKey: 'venue-pro' }),
+      })
+      const data = await res.json()
+      if (data.url) {
+        window.location.href = data.url
+      }
+    } catch {
+      setLoading(false)
+    }
+  }
+
+  return (
+    <div className="relative overflow-hidden rounded-2xl border-2 border-primary/20 bg-gradient-to-r from-primary/5 via-card to-primary/5 p-5 md:p-6">
+      <div className="flex items-start sm:items-center justify-between gap-4 flex-col sm:flex-row">
+        <div className="flex items-start gap-3">
+          <div className="h-10 w-10 rounded-xl bg-primary/10 flex items-center justify-center shrink-0">
+            <Sparkles className="h-5 w-5 text-primary" />
+          </div>
+          <div>
+            <h3 className="text-sm font-bold">Upgrade to Venue Pro</h3>
+            <p className="text-xs text-muted-foreground mt-0.5">
+              Unlock lobby TV mode, session scheduling, multi-staff, and more. 14-day free trial.
+            </p>
+          </div>
+        </div>
+        <Button onClick={handleSubscribe} disabled={loading} size="sm" className="shrink-0">
+          <CreditCard className="mr-1.5 h-3.5 w-3.5" />
+          {loading ? 'Loading...' : 'Start Free Trial'}
+        </Button>
+      </div>
+    </div>
   )
 }

@@ -15,6 +15,9 @@ export type Venue = {
   owner_id: string
   num_courts: number
   created_at: string
+  subscription_status: string | null
+  stripe_subscription_id: string | null
+  stripe_customer_id: string | null
 }
 
 export type VenueMember = {
