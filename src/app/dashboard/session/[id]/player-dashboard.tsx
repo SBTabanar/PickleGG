@@ -22,6 +22,8 @@ import {
 } from "lucide-react"
 import { joinQueueAction, leaveQueueAction } from "./actions"
 import { EditProfileDialog } from "@/components/edit-profile-dialog"
+import { FriendsDialog } from "@/components/friends-dialog"
+import { QueueWithFriendsDialog } from "@/components/queue-with-friends-dialog"
 
 const supabase = createClient()
 
@@ -289,6 +291,7 @@ export function PlayerDashboard({
         </div>
         <div className="flex items-center gap-1">
           <ShareSession shareCode={session.share_code} sessionName={session.name} />
+          <FriendsDialog />
           <EditProfileDialog />
           <ModeToggle />
         </div>
@@ -315,16 +318,22 @@ export function PlayerDashboard({
               </div>
               <div>
                 <p className="text-lg font-semibold">Ready to play?</p>
-                <p className="text-sm text-muted-foreground mt-1">Jump into the rotation and we&apos;ll match you up</p>
+                <p className="text-sm text-muted-foreground mt-1">Jump into the rotation solo or with friends</p>
               </div>
-              <Button
-                className="w-full h-12 text-base"
-                onClick={joinQueue}
-                disabled={joining}
-              >
-                <LogIn className="mr-2 h-5 w-5" />
-                {joining ? "Joining..." : "Join Queue"}
-              </Button>
+              <div className="grid grid-cols-2 gap-2">
+                <Button
+                  className="h-12 text-base"
+                  onClick={joinQueue}
+                  disabled={joining}
+                >
+                  <LogIn className="mr-2 h-5 w-5" />
+                  {joining ? "Joining..." : "Solo"}
+                </Button>
+                <QueueWithFriendsDialog
+                  sessionId={session.id}
+                  onJoined={() => {}}
+                />
+              </div>
             </div>
           )}
 

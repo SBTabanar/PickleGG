@@ -35,6 +35,14 @@ export type QueueEntry = {
   bucket_index: number
 }
 
+export type Friendship = {
+  id: string
+  requester_id: string
+  addressee_id: string
+  status: 'pending' | 'accepted' | 'declined'
+  created_at: string
+}
+
 export type Game = {
   id: string
   session_id: string

@@ -184,36 +184,68 @@ export async function updateQueueEntryAction(sessionId: string, entryId: string,
   return { success: true }
 }
 
-export async function joinQueueAction(sessionId: string) {
+export async function joinQueueAction(sessionId: string, friendIds?: string[]) {
   const supabase = await createClient()
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) return { error: 'Not authenticated' }
 
-  // Check if player is already in the queue (waiting or playing)
+  const playerIds = [user.id, ...(friendIds || [])]
+
+  // Validate: no more than 4 players
+  if (playerIds.length > 4) {
+    return { error: 'A group can have at most 4 players' }
+  }
+
+  // Validate friends are actually accepted friends
+  if (friendIds && friendIds.length > 0) {
+    const { data: friendships } = await supabase
+      .from('friendships')
+      .select('requester_id, addressee_id')
+      .eq('status', 'accepted')
+      .or(`requester_id.eq.${user.id},addressee_id.eq.${user.id}`)
+
+    const acceptedFriendIds = new Set<string>()
+    friendships?.forEach(f => {
+      if (f.requester_id === user.id) acceptedFriendIds.add(f.addressee_id)
+      else acceptedFriendIds.add(f.requester_id)
+    })
+
+    for (const fid of friendIds) {
+      if (!acceptedFriendIds.has(fid)) {
+        return { error: 'One or more selected players are not your friends' }
+      }
+    }
+  }
+
+  // Check if any player is already in the queue
   const { data: existing } = await supabase
     .from('queue_entries')
     .select('id, player_ids')
     .eq('session_id', sessionId)
     .in('status', ['waiting', 'playing'])
 
-  if (existing?.some(e => e.player_ids.includes(user.id))) {
-    return { error: 'You are already in the queue' }
+  for (const pid of playerIds) {
+    if (existing?.some(e => e.player_ids.includes(pid))) {
+      return { error: 'One or more players are already in the queue' }
+    }
   }
 
-  // Also check if currently in an active game
+  // Check if any player is in an active game
   const { data: activeGames } = await supabase
     .from('games')
     .select('id, team1_player_ids, team2_player_ids')
     .eq('session_id', sessionId)
     .eq('status', 'in_progress')
 
-  if (activeGames?.some(g => g.team1_player_ids.includes(user.id) || g.team2_player_ids.includes(user.id))) {
-    return { error: 'You are currently in a game' }
+  for (const pid of playerIds) {
+    if (activeGames?.some(g => g.team1_player_ids.includes(pid) || g.team2_player_ids.includes(pid))) {
+      return { error: 'One or more players are currently in a game' }
+    }
   }
 
   const { error } = await supabase.from('queue_entries').insert({
     session_id: sessionId,
-    player_ids: [user.id],
+    player_ids: playerIds,
     status: 'waiting',
     bucket_index: 0,
   })
